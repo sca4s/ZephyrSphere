@@ -13,10 +13,10 @@
   <!-- 3D Viewport -->
   <div id="canvas-container"></div>
 
-  <!-- Global Top Utility Bar (Theme + Show All UI) -->
+  <!-- Global Top Utility Bar (Symmetrical & Equidistant) -->
   <div id="top-utility-bar">
     <div class="brand-badge ui-surface" data-surface>
-      <svg class="brand-icon" viewBox="0 0 64 64" width="24" height="24">
+      <svg class="brand-icon" viewBox="0 0 64 64" width="22" height="22">
         <defs>
           <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stop-color="#8ec5fc" />
@@ -34,7 +34,7 @@
       <button id="unhide-all-btn" class="pill-btn ui-surface hidden" data-surface title="Restore Hidden Panels">
         Restore All UI
       </button>
-      <button id="theme-toggle-btn" class="pill-btn ui-surface" data-surface title="Switch Theme">
+      <button id="theme-toggle-btn" class="pill-btn top-equal-pill ui-surface" data-surface title="Switch Theme">
         <span id="theme-label">Dark Mode</span>
       </button>
     </div>
@@ -45,7 +45,7 @@
     <div class="modal-card ui-surface" data-surface>
       <div class="modal-header">
         <h1>ZephyrSphere</h1>
-        <p>Step 1 of 2 — Select your playing device to calibrate aspect ratio & controls</p>
+        <p>Step 1 of 2 — Select your playing device to calibrate aspect ratio &amp; controls</p>
       </div>
 
       <div class="device-grid">
@@ -57,7 +57,7 @@
         <button class="device-card ui-surface" data-surface data-device="mobile">
           <div class="device-svg">📱📲</div>
           <strong>Mobile &amp; Tablet</strong>
-          <span>Unified Haptic Touch &amp; Slide Controls</span>
+          <span>Drag to Aim + Double-Tap or Button to Fire</span>
         </button>
       </div>
 
@@ -103,8 +103,8 @@
             <small>Walnut desk, steaming mug &amp; vinyl turntable</small>
           </button>
           <button class="option-pill biome-pill ui-surface" data-surface data-biome="gothic_balcony">
-             stained 6. Gothic Balcony
-            <small>Lancet arches, rose window &amp; spires</small>
+            🏛️ 6. Gothic Balcony
+            <small>Lancet arches, stained-glass rose window &amp; spires</small>
           </button>
           <button class="option-pill biome-pill ui-surface" data-surface data-biome="gothic_castle">
             🏰 7. Gothic Castle
@@ -171,8 +171,8 @@
   <main id="game-hud" class="hidden">
     <!-- Left Column Stack -->
     <div class="hud-column left-column">
-      <!-- Panel 1: Score & Time -->
-      <div class="hud-panel ui-surface" data-surface id="panel-score">
+      <!-- Panel 1: Score & Time (Matched in height & spacing to Queue & Command) -->
+      <div class="hud-panel top-sym-panel ui-surface" data-surface id="panel-score">
         <div class="panel-header">
           <span>Session Metrics</span>
           <button class="hide-panel-btn" data-target="panel-score" title="Hide Panel">×</button>
@@ -223,7 +223,7 @@
     <!-- Right Column Stack -->
     <div class="hud-column right-column">
       <!-- Panel 3: Active & Next Sphere Preview, Swap & Pause Command -->
-      <div class="hud-panel ui-surface" data-surface id="panel-arsenal">
+      <div class="hud-panel top-sym-panel ui-surface" data-surface id="panel-arsenal">
         <div class="panel-header">
           <span>Queue &amp; Command</span>
           <button class="hide-panel-btn" data-target="panel-arsenal" title="Hide Panel">×</button>
@@ -234,14 +234,14 @@
               <span id="current-ball-dot" class="ball-dot"></span>
               <div class="queue-text">
                 <small class="queue-label">ACTIVE</small>
-                <strong id="current-ball-name">Bubble</strong>
+                <strong id="current-ball-name">Rose</strong>
               </div>
             </div>
             <div class="queue-badge" title="Next Up in Queue">
               <span id="next-ball-dot" class="ball-dot"></span>
               <div class="queue-text">
                 <small class="queue-label">NEXT</small>
-                <strong id="next-ball-name">Bubble</strong>
+                <strong id="next-ball-name">Amber</strong>
               </div>
             </div>
           </div>
@@ -256,7 +256,7 @@
         </div>
       </div>
 
-      <!-- Panel 4: Interactive Biome Switcher (Replaces Companion Panel cleanly) -->
+      <!-- Panel 4: Interactive Biome Switcher -->
       <div class="hud-panel ui-surface" data-surface id="panel-companion">
         <div class="panel-header">
           <span>Active 3D Biome</span>
@@ -272,7 +272,7 @@
     <!-- Device-Adaptive Control Deck -->
     <div id="device-controls" class="device-controls ui-surface" data-surface>
       <div class="panel-header compact-header">
-        <span id="device-deck-title">Controls</span>
+        <span id="device-deck-title">Controls (Drag Arena to Aim • Double-Tap to Fire)</span>
         <button class="hide-panel-btn" data-target="device-controls" title="Hide Controls">×</button>
       </div>
       <!-- Haptic Touch / Slide Aim Bar -->
@@ -299,14 +299,40 @@
     </div>
   </div>
 
-  <!-- PAUSE MODAL -->
+  <!-- PAUSE MODAL (With Live Background Biome & Sky Switcher + Equal-Sized Buttons) -->
   <div id="pause-modal" class="overlay-screen hidden">
     <div class="modal-card compact-modal ui-surface" data-surface>
       <h2>Game Paused</h2>
-      <p>Your current arena state, score, and timer are ready to be stored.</p>
+      <p>Switch background scenes live or store your session progress.</p>
+
+      <div class="pause-scene-box">
+        <label class="section-title">Switch 3D Biome Scene</label>
+        <select id="pause-biome-select" class="scene-select">
+          <option value="royal_sanctum">👑 1. Royal Sanctum</option>
+          <option value="cyberpunk_drift">⚡ 2. Cyberpunk Drift</option>
+          <option value="angelic_cloud">🪽 3. Angelic Cloud</option>
+          <option value="pastel_lagoon">🏝️ 4. Pastel Lagoon</option>
+          <option value="lofi_cafe">☕ 5. Lo-Fi Cafe</option>
+          <option value="gothic_balcony">🏛️ 6. Gothic Balcony</option>
+          <option value="gothic_castle">🏰 7. Gothic Castle</option>
+          <option value="enchanted_forest">🌲 8. Enchanted Forest</option>
+          <option value="cyberpunk_terrace">🌆 9. Cyberpunk Terrace</option>
+          <option value="sandstone_desert">🏜️ 10. Sandstone Desert</option>
+          <option value="abyssal_reef">🪸 11. Abyssal Reef</option>
+          <option value="alpine_meadows">🏔️ 12. Alpine Meadows</option>
+        </select>
+
+        <label class="section-title">Switch Sky Lighting</label>
+        <div class="pause-sky-row" id="pause-sky-options">
+          <button class="pill-btn pause-sky-btn" data-bg="day">☀️ Day</button>
+          <button class="pill-btn pause-sky-btn" data-bg="night">🌙 Night</button>
+          <button class="pill-btn pause-sky-btn" data-bg="cycle">🌅 Cycle</button>
+        </div>
+      </div>
+
       <div class="pause-actions">
-        <button id="resume-game-btn" class="primary-btn">Resume (3s Timer)</button>
-        <button id="save-home-btn" class="secondary-btn">Save Progress &amp; Leave to Home</button>
+        <button id="resume-game-btn" class="primary-btn equal-modal-btn">Resume (3s Timer)</button>
+        <button id="save-home-btn" class="secondary-btn equal-modal-btn">Save Progress &amp; Leave to Home</button>
       </div>
     </div>
   </div>
@@ -327,8 +353,8 @@
         </div>
       </div>
       <div class="pause-actions">
-        <button id="rematch-btn" class="primary-btn">🔄 Rematch</button>
-        <button id="gameover-home-btn" class="secondary-btn">🏠 Return to Homescreen</button>
+        <button id="rematch-btn" class="primary-btn equal-modal-btn">🔄 Rematch</button>
+        <button id="gameover-home-btn" class="secondary-btn equal-modal-btn">🏠 Return to Homescreen</button>
       </div>
     </div>
   </div>
