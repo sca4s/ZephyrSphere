@@ -40,7 +40,7 @@
     </div>
   </div>
 
-  <!-- INITIATION SCREEN 1: Device Selection -->
+  <!-- INITIATION SCREEN 1: Device Selection (Desktop + Unified Mobile/Tablet) -->
   <section id="screen-device" class="init-screen active">
     <div class="modal-card ui-surface" data-surface>
       <div class="modal-header">
@@ -54,15 +54,10 @@
           <strong>Desktop</strong>
           <span>Keyboard + Mouse Precision</span>
         </button>
-        <button class="device-card ui-surface" data-surface data-device="tablet">
-          <div class="device-svg">📱</div>
-          <strong>Tablet</strong>
-          <span>Balanced Touch HUD + Dual Pad</span>
-        </button>
         <button class="device-card ui-surface" data-surface data-device="mobile">
-          <div class="device-svg">📲</div>
-          <strong>Mobile</strong>
-          <span>Compact Ergonomic Thumb Controls</span>
+          <div class="device-svg">📱📲</div>
+          <strong>Mobile &amp; Tablet</strong>
+          <span>Unified Haptic Touch &amp; Slide Controls</span>
         </button>
       </div>
 
@@ -76,16 +71,70 @@
     </div>
   </section>
 
-  <!-- INITIATION SCREEN 2: Background & Ball Customization -->
+  <!-- INITIATION SCREEN 2: Interactive 3D Biome, Lighting & Ball Customization -->
   <section id="screen-customize" class="init-screen">
-    <div class="modal-card ui-surface" data-surface>
+    <div class="modal-card wide-modal ui-surface" data-surface>
       <div class="modal-header">
-        <h2>Arena & Sphere Setup</h2>
-        <p>Step 2 of 2 — Choose sky cycle and sphere style</p>
+        <h2>Arena, Biome &amp; Sphere Setup</h2>
+        <p>Step 2 of 2 — Choose your Interactive 3D Biome, sky cycle, and sphere style</p>
       </div>
 
       <div class="custom-section">
-        <label class="section-title">Sky & Lighting Cycle</label>
+        <label class="section-title">Interactive 3D Biome (12 Environments)</label>
+        <div class="biome-grid" id="biome-options">
+          <button class="option-pill biome-pill ui-surface active" data-surface data-biome="royal_sanctum">
+            👑 1. Royal Sanctum
+            <small>Marble rotunda, velvet inlay &amp; crown jewels</small>
+          </button>
+          <button class="option-pill biome-pill ui-surface" data-surface data-biome="cyberpunk_drift">
+            ⚡ 2. Cyberpunk Drift
+            <small>Synthwave horizon &amp; dual neon drift rings</small>
+          </button>
+          <button class="option-pill biome-pill ui-surface" data-surface data-biome="angelic_cloud">
+            🪽 3. Angelic Cloud
+            <small>Cloud pillows, golden halos &amp; pearl spires</small>
+          </button>
+          <button class="option-pill biome-pill ui-surface" data-surface data-biome="pastel_lagoon">
+            🏝️ 4. Pastel Lagoon
+            <small>Turquoise lagoon, palm trees &amp; parasols</small>
+          </button>
+          <button class="option-pill biome-pill ui-surface" data-surface data-biome="lofi_cafe">
+            ☕ 5. Lo-Fi Cafe
+            <small>Walnut desk, steaming mug &amp; vinyl turntable</small>
+          </button>
+          <button class="option-pill biome-pill ui-surface" data-surface data-biome="gothic_balcony">
+             stained 6. Gothic Balcony
+            <small>Lancet arches, rose window &amp; spires</small>
+          </button>
+          <button class="option-pill biome-pill ui-surface" data-surface data-biome="gothic_castle">
+            🏰 7. Gothic Castle
+            <small>4 corner turrets, battlements &amp; braziers</small>
+          </button>
+          <button class="option-pill biome-pill ui-surface" data-surface data-biome="enchanted_forest">
+            🌲 8. Enchanted Forest
+            <small>Pine tiers, winding stream &amp; fireflies</small>
+          </button>
+          <button class="option-pill biome-pill ui-surface" data-surface data-biome="cyberpunk_terrace">
+            🌆 9. Cyberpunk Terrace
+            <small>Rooftop deck, neon rails &amp; skyscrapers</small>
+          </button>
+          <button class="option-pill biome-pill ui-surface" data-surface data-biome="sandstone_desert">
+            🏜️ 10. Sandstone Desert
+            <small>Pyramid, red-rock mesa, arch &amp; oasis</small>
+          </button>
+          <button class="option-pill biome-pill ui-surface" data-surface data-biome="abyssal_reef">
+            🪸 11. Abyssal Reef
+            <small>Coral clusters, seabed &amp; rising bubbles</small>
+          </button>
+          <button class="option-pill biome-pill ui-surface" data-surface data-biome="alpine_meadows">
+            🏔️ 12. Alpine Meadows
+            <small>Rolling green hills &amp; snow-capped peaks</small>
+          </button>
+        </div>
+      </div>
+
+      <div class="custom-section">
+        <label class="section-title">Sky &amp; Lighting Cycle</label>
         <div class="option-row" id="bg-options">
           <button class="option-pill ui-surface active" data-surface data-bg="day">
             ☀️ Radiant Day
@@ -151,7 +200,7 @@
       <!-- Panel 2: Velocities & Sky Cycle -->
       <div class="hud-panel ui-surface" data-surface id="panel-physics">
         <div class="panel-header">
-          <span>Chrono & Velocity</span>
+          <span>Chrono &amp; Velocity</span>
           <button class="hide-panel-btn" data-target="panel-physics" title="Hide Panel">×</button>
         </div>
         <div class="telemetry-list">
@@ -173,34 +222,50 @@
 
     <!-- Right Column Stack -->
     <div class="hud-column right-column">
-      <!-- Panel 3: Next Sphere Preview & Session Controls -->
+      <!-- Panel 3: Active & Next Sphere Preview, Swap & Pause Command -->
       <div class="hud-panel ui-surface" data-surface id="panel-arsenal">
         <div class="panel-header">
-          <span>Queue & Command</span>
+          <span>Queue &amp; Command</span>
           <button class="hide-panel-btn" data-target="panel-arsenal" title="Hide Panel">×</button>
         </div>
-        <div class="arsenal-row">
-          <div class="queue-badge">
-            <span id="current-ball-dot" class="ball-dot"></span>
-            <small id="current-ball-name">Active</small>
+        <div class="arsenal-stack">
+          <div class="queue-pair">
+            <div class="queue-badge" title="Currently Loaded in Cannon">
+              <span id="current-ball-dot" class="ball-dot"></span>
+              <div class="queue-text">
+                <small class="queue-label">ACTIVE</small>
+                <strong id="current-ball-name">Bubble</strong>
+              </div>
+            </div>
+            <div class="queue-badge" title="Next Up in Queue">
+              <span id="next-ball-dot" class="ball-dot"></span>
+              <div class="queue-text">
+                <small class="queue-label">NEXT</small>
+                <strong id="next-ball-name">Bubble</strong>
+              </div>
+            </div>
           </div>
-          <div class="queue-badge">
-            <span id="next-ball-dot" class="ball-dot"></span>
-            <small>Next</small>
+          <div class="command-pair">
+            <button id="swap-ball-btn" class="pill-btn action-pill" title="Swap Active and Next Sphere (C)">
+              ↔ Swap
+            </button>
+            <button id="pause-btn" class="pill-btn action-pill pause-pill" title="Pause Game">
+              ⏸ Pause
+            </button>
           </div>
-          <button id="pause-btn" class="pill-btn">Pause</button>
         </div>
       </div>
 
-      <!-- Panel 4: Companion Bird & Controls Guide -->
+      <!-- Panel 4: Interactive Biome Switcher (Replaces Companion Panel cleanly) -->
       <div class="hud-panel ui-surface" data-surface id="panel-companion">
         <div class="panel-header">
-          <span>Aerial Companion</span>
+          <span>Active 3D Biome</span>
           <button class="hide-panel-btn" data-target="panel-companion" title="Hide Panel">×</button>
         </div>
-        <p class="companion-status">
-          Skybird patrols autonomously. Press <strong>↑</strong> to make it leap!
-        </p>
+        <div class="biome-hud-row">
+          <strong id="active-biome-label" class="companion-status">Royal Sanctum</strong>
+          <button id="cycle-biome-btn" class="pill-btn" title="Switch to Next 3D Biome">Next Biome ↻</button>
+        </div>
       </div>
     </div>
 
@@ -210,13 +275,18 @@
         <span id="device-deck-title">Controls</span>
         <button class="hide-panel-btn" data-target="device-controls" title="Hide Controls">×</button>
       </div>
+      <!-- Haptic Touch / Slide Aim Bar -->
+      <div class="touch-slider-row">
+        <span class="slider-tag">Slide to Aim</span>
+        <input id="aim-slider" type="range" min="-118" max="118" value="0" step="1" aria-label="Slide to Aim Cannon" />
+      </div>
       <div class="control-buttons-row">
         <button class="ctrl-btn" id="btn-cycle-up" title="Accelerate Sky Cycle (W)">W ☀️+</button>
         <button class="ctrl-btn" id="btn-cycle-down" title="Decelerate Sky Cycle (S)">S 🌙-</button>
         <button class="ctrl-btn" id="btn-ball-up" title="Accelerate Ball (A)">A ⚡+</button>
         <button class="ctrl-btn" id="btn-ball-down" title="Decelerate Ball (D)">D 🐢-</button>
-        <button class="ctrl-btn accent" id="btn-bird-jump" title="Bird Jump (Up Arrow)">↑ Bird Jump</button>
-        <button class="ctrl-btn shoot" id="btn-fire" title="Launch Sphere">Fire</button>
+        <button class="ctrl-btn accent" id="btn-bird-jump" title="Swap Current & Next Ball (C)">↔ Swap Ball</button>
+        <button class="ctrl-btn shoot" id="btn-fire" title="Launch Sphere">🔥 Fire</button>
       </div>
     </div>
   </main>
@@ -236,7 +306,29 @@
       <p>Your current arena state, score, and timer are ready to be stored.</p>
       <div class="pause-actions">
         <button id="resume-game-btn" class="primary-btn">Resume (3s Timer)</button>
-        <button id="save-home-btn" class="secondary-btn">Save Progress & Leave to Home</button>
+        <button id="save-home-btn" class="secondary-btn">Save Progress &amp; Leave to Home</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- WIN / LOSE RESULT MODAL -->
+  <div id="gameover-modal" class="overlay-screen hidden">
+    <div class="modal-card compact-modal ui-surface" data-surface>
+      <h2 id="gameover-title">You Won!</h2>
+      <p id="gameover-message">You cleared the entire arena!</p>
+      <div class="stats-grid gameover-stats">
+        <div class="stat-item">
+          <small>FINAL SCORE</small>
+          <strong id="final-score-val">0</strong>
+        </div>
+        <div class="stat-item">
+          <small>FINAL TIME</small>
+          <strong id="final-time-val">00:00</strong>
+        </div>
+      </div>
+      <div class="pause-actions">
+        <button id="rematch-btn" class="primary-btn">🔄 Rematch</button>
+        <button id="gameover-home-btn" class="secondary-btn">🏠 Return to Homescreen</button>
       </div>
     </div>
   </div>
