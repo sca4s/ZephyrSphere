@@ -47,11 +47,11 @@
   };
 
   const SPHERE_TYPES = [
-    { id: 'football',   label: 'Football',   bubbleLabel: 'Rose Bubble',   bubbleColor: '#ff7eb3', accent: '#ffffff' },
-    { id: 'basketball', label: 'Basketball', bubbleLabel: 'Amber Bubble',  bubbleColor: '#ffa85c', accent: '#2d2d2d' },
-    { id: 'cricket',    label: 'Cricket',    bubbleLabel: 'Ruby Bubble',   bubbleColor: '#ff5e62', accent: '#f8e7c1' },
-    { id: 'tennis',     label: 'Tennis',     bubbleLabel: 'Lime Bubble',   bubbleColor: '#a8ff78', accent: '#ffffff' },
-    { id: 'volleyball', label: 'Volleyball', bubbleLabel: 'Cyan Bubble',   bubbleColor: '#70e1f5', accent: '#ffd194' }
+    { id: 'football',   label: 'Football',   bubbleLabel: 'Rose',   bubbleColor: '#ff7eb3', accent: '#ffffff' },
+    { id: 'basketball', label: 'Basketball', bubbleLabel: 'Amber',  bubbleColor: '#ffa85c', accent: '#2d2d2d' },
+    { id: 'cricket',    label: 'Cricket',    bubbleLabel: 'Ruby',   bubbleColor: '#ff5e62', accent: '#f8e7c1' },
+    { id: 'tennis',     label: 'Tennis',     bubbleLabel: 'Lime',   bubbleColor: '#a8ff78', accent: '#ffffff' },
+    { id: 'volleyball', label: 'Volleyball', bubbleLabel: 'Cyan',   bubbleColor: '#70e1f5', accent: '#ffd194' }
   ];
 
   /* =========================================================
@@ -84,6 +84,7 @@
     countdownNumber: document.getElementById('countdown-number'),
     countdownSubtext: document.getElementById('countdown-subtext'),
     pauseModal: document.getElementById('pause-modal'),
+    pauseBiomeSelect: document.getElementById('pause-biome-select'),
     gameoverModal: document.getElementById('gameover-modal'),
     gameoverTitle: document.getElementById('gameover-title'),
     gameoverMessage: document.getElementById('gameover-message'),
@@ -140,14 +141,14 @@
    * ========================================================= */
   let scene, camera, renderer, sunLight, ambientLight, starsMesh;
   let arenaGroup, biomeGroup, biomeAnimatedItems = [];
-  let gridBubbles = [], activeProjectile = null;
-  let cannonGroup, cannonBarrel, launcherMesh, trajectoryLine;
+  let gridBubbles = [], fallingSpheres = [], activeProjectile = null;
+  let cannonGroup, cannonBarrel, muzzleRingMesh, launcherMesh, nextPreviewMesh, trajectoryLine;
 
-  // True Rectangular Arena Bounds (Cannon sits at bottom, clear of UI)
+  // True Rectangular Arena Bounds
   const ARENA_BOUNDS = {
     left: -5.8,
     right: 5.8,
-    top: 7.4,
+    top: 6.8,
     bottom: -4.2,
     radius: 0.54
   };
@@ -157,32 +158,33 @@
     const h = window.innerHeight;
     const aspect = w / h;
 
-    // Larger screen = larger UI, smaller screen = smaller UI, while keeping mobile touch UI readable
     let baseScale = Math.min(w / 1360, h / 840);
     if (w <= 820) {
       baseScale = Math.max(0.88, Math.min(1.04, w / 410));
-      dom.deviceDeckTitle.textContent = 'Mobile & Tablet Haptic Deck';
+      dom.deviceDeckTitle.textContent = 'Drag Arena to Aim • Double-Tap or Fire';
     } else {
       baseScale = Math.max(0.82, Math.min(1.22, baseScale));
       dom.deviceDeckTitle.textContent =
-        state.device === 'mobile' ? 'Mobile & Tablet Haptic Deck' : 'Desktop Command Bar';
+        state.device === 'mobile'
+          ? 'Drag Arena to Aim • Double-Tap or Fire'
+          : 'Desktop Command Bar (Mouse Aim • Click/Space Fire)';
     }
 
     document.documentElement.style.setProperty('--ui-scale', baseScale.toFixed(3));
 
-    // Fit entire rectangular rink + top HUD + bottom Cannon & Controls inside 3D camera frustum
+    // Fit entire rectangular rink between top HUD cards and bottom deck so ZERO overlap occurs
     if (camera && renderer) {
       camera.aspect = aspect;
       const fovRad = THREE.MathUtils.degToRad(camera.fov);
-      const requiredWidth = (ARENA_BOUNDS.right - ARENA_BOUNDS.left) + 3.4;
-      const requiredHeight = (ARENA_BOUNDS.top - ARENA_BOUNDS.bottom) + (aspect < 1 ? 9.2 : 6.4);
+      const requiredWidth = (ARENA_BOUNDS.right - ARENA_BOUNDS.left) + (aspect < 1 ? 2.4 : 4.2);
+      const requiredHeight = (ARENA_BOUNDS.top - ARENA_BOUNDS.bottom) + (aspect < 1 ? 11.4 : 7.2);
 
       const distForHeight = (requiredHeight / 2) / Math.tan(fovRad / 2);
       const distForWidth = (requiredWidth / 2) / (Math.tan(fovRad / 2) * aspect);
-      const camZ = Math.max(distForHeight, distForWidth, 16.5);
+      const camZ = Math.max(distForHeight, distForWidth, 17.5);
 
-      // Perpendicular camera lookAt eliminates trapezoid distortion
-      const centerY = aspect < 1 ? 1.15 : 1.35;
+      // Shift camera centerY slightly higher on portrait so the rink sits lower, completely clear of top HUD
+      const centerY = aspect < 1 ? 1.85 : 1.35;
       camera.position.set(0, centerY, camZ);
       camera.lookAt(0, centerY, 0);
       camera.updateProjectionMatrix();
@@ -315,8 +317,10 @@
       sphereMaterials.bubbles.push(
         new THREE.MeshPhysicalMaterial({
           color: new THREE.Color(t.bubbleColor),
+          emissive: new THREE.Color(t.bubbleColor),
+          emissiveIntensity: 0.14,
           transparent: true,
-          opacity: 0.84,
+          opacity: 0.9,
           roughness: 0.08,
           metalness: 0.1,
           clearcoat: 1.0,
@@ -327,7 +331,7 @@
       sphereMaterials.sports.push(
         new THREE.MeshStandardMaterial({
           map: createSportsTexture(t.id),
-          roughness: 0.38,
+          roughness: 0.35,
           metalness: 0.08
         })
       );
@@ -341,8 +345,18 @@
   }
 
   /* =========================================================
-   * 12 INTERACTIVE 3D BIOMES BUILDER
+   * 12 REALISTIC & ARCHITECTURAL 3D BIOMES BUILDER
    * ========================================================= */
+  function syncActiveBiomeControls() {
+    const bInfo = BIOME_LIST.find((b) => b.id === state.biome) || BIOME_LIST[0];
+    if (dom.activeBiomeLabel) dom.activeBiomeLabel.textContent = bInfo.name;
+    if (dom.pauseBiomeSelect) dom.pauseBiomeSelect.value = state.biome;
+
+    document.querySelectorAll('#biome-options .biome-pill').forEach((btn) => {
+      btn.classList.toggle('active', btn.getAttribute('data-biome') === state.biome);
+    });
+  }
+
   function buildBiome3D(biomeId) {
     if (!biomeGroup) {
       biomeGroup = new THREE.Group();
@@ -352,311 +366,434 @@
       biomeGroup.remove(biomeGroup.children[0]);
     }
     biomeAnimatedItems = [];
+    syncActiveBiomeControls();
 
-    const bInfo = BIOME_LIST.find((b) => b.id === biomeId) || BIOME_LIST[0];
-    if (dom.activeBiomeLabel) dom.activeBiomeLabel.textContent = bInfo.name;
-
-    const zBack = -6.5;
+    const zBack = -7.5;
 
     if (biomeId === 'royal_sanctum') {
       // Marble rotunda, velvet carpet inlay, golden rings, fluted pillars, and floating crown jewels
       const rotunda = new THREE.Mesh(
-        new THREE.CylinderGeometry(14, 15, 1.4, 40),
-        new THREE.MeshStandardMaterial({ color: 0xf3f4f6, roughness: 0.25 })
+        new THREE.CylinderGeometry(16, 17.5, 1.6, 48),
+        new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.2, metalness: 0.1 })
       );
       rotunda.position.set(0, -6.2, zBack);
       biomeGroup.add(rotunda);
 
       const carpet = new THREE.Mesh(
-        new THREE.CylinderGeometry(9.5, 9.5, 1.45, 32),
-        new THREE.MeshStandardMaterial({ color: 0x881337, roughness: 0.6 })
+        new THREE.CylinderGeometry(11, 11, 1.66, 40),
+        new THREE.MeshStandardMaterial({ color: 0x9f1239, roughness: 0.65 })
       );
       carpet.position.set(0, -6.18, zBack);
       biomeGroup.add(carpet);
 
+      const goldMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.85, roughness: 0.18 });
+      const trimRing = new THREE.Mesh(new THREE.TorusGeometry(11.1, 0.18, 16, 64), goldMat);
+      trimRing.rotation.x = Math.PI / 2;
+      trimRing.position.set(0, -5.35, zBack);
+      biomeGroup.add(trimRing);
+
       for (let i = 0; i < 6; i++) {
-        const ang = (i / 6) * Math.PI - Math.PI;
+        const ang = (i / 5) * Math.PI - Math.PI;
+        const px = Math.cos(ang) * 13.5;
+        const pz = zBack + Math.sin(ang) * 4.5;
         const pillar = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.65, 0.75, 16, 16),
-          new THREE.MeshStandardMaterial({ color: 0xe5e7eb, roughness: 0.3 })
+          new THREE.CylinderGeometry(0.65, 0.78, 15, 20),
+          new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.25 })
         );
-        pillar.position.set(Math.cos(ang) * 12, 1.8, zBack + Math.sin(ang) * 4);
+        pillar.position.set(px, 1.4, pz);
         biomeGroup.add(pillar);
+
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 1.8), goldMat);
+        cap.position.set(px, 8.9, pz);
+        biomeGroup.add(cap);
       }
 
-      const ringMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.8, roughness: 0.2 });
-      const goldRing = new THREE.Mesh(new THREE.TorusGeometry(9.5, 0.22, 16, 64), ringMat);
-      goldRing.position.set(0, 2.2, zBack - 2);
-      biomeGroup.add(goldRing);
-      biomeAnimatedItems.push({ mesh: goldRing, rotZ: 0.35, rotY: 0.2 });
+      const celestialRing = new THREE.Mesh(new THREE.TorusGeometry(10.5, 0.2, 20, 80), goldMat);
+      celestialRing.position.set(0, 1.5, zBack - 3);
+      biomeGroup.add(celestialRing);
+      biomeAnimatedItems.push({ mesh: celestialRing, rotZ: 0.25, rotY: 0.15 });
 
       for (let j = 0; j < 6; j++) {
         const jewel = new THREE.Mesh(
           new THREE.OctahedronGeometry(0.65, 0),
-          new THREE.MeshPhysicalMaterial({ color: j % 2 ? 0xf43f5e : 0x38bdf8, roughness: 0.1, metalness: 0.2 })
+          new THREE.MeshPhysicalMaterial({
+            color: j % 2 ? 0xf43f5e : 0x38bdf8,
+            emissive: j % 2 ? 0x881337 : 0x0369a1,
+            emissiveIntensity: 0.35,
+            roughness: 0.08,
+            clearcoat: 1
+          })
         );
-        jewel.position.set((j - 2.5) * 4.2, 5.5 + (j % 2) * 1.5, zBack + 1);
+        jewel.position.set((j - 2.5) * 4.6, 5.8 + (j % 2) * 1.4, zBack + 0.5);
         biomeGroup.add(jewel);
         biomeAnimatedItems.push({ mesh: jewel, rotY: 1.2, floatOffset: j, baseY: jewel.position.y });
       }
     } else if (biomeId === 'cyberpunk_drift') {
       // Synthwave horizon, dual tilted neon drift rings, and holographic drift portals
-      const gridPlane = new THREE.GridHelper(44, 28, 0xff007f, 0x00f0ff);
+      const gridPlane = new THREE.GridHelper(52, 32, 0xff007f, 0x00f0ff);
       gridPlane.position.set(0, -6.0, zBack);
       biomeGroup.add(gridPlane);
 
-      const sunDisc = new THREE.Mesh(
-        new THREE.CircleGeometry(6.5, 32),
-        new THREE.MeshBasicMaterial({ color: 0xff2a85 })
-      );
-      sunDisc.position.set(0, 3.8, zBack - 6);
+      const sunMat = new THREE.MeshBasicMaterial({ color: 0xff2a85 });
+      const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(7.2, 40), sunMat);
+      sunDisc.position.set(0, 3.2, zBack - 7);
       biomeGroup.add(sunDisc);
 
       const ring1 = new THREE.Mesh(
-        new THREE.TorusGeometry(8.5, 0.18, 16, 64),
+        new THREE.TorusGeometry(9.2, 0.16, 16, 80),
         new THREE.MeshBasicMaterial({ color: 0x00f0ff })
       );
-      ring1.rotation.x = 0.55;
-      ring1.rotation.y = 0.35;
-      ring1.position.set(0, 1.8, zBack - 1);
+      ring1.rotation.x = 0.58;
+      ring1.rotation.y = 0.32;
+      ring1.position.set(0, 1.5, zBack - 2);
       biomeGroup.add(ring1);
 
       const ring2 = new THREE.Mesh(
-        new THREE.TorusGeometry(10.2, 0.18, 16, 64),
+        new THREE.TorusGeometry(11.0, 0.16, 16, 80),
         new THREE.MeshBasicMaterial({ color: 0xff00a0 })
       );
-      ring2.rotation.x = -0.5;
-      ring2.rotation.y = -0.35;
-      ring2.position.set(0, 1.8, zBack - 1);
+      ring2.rotation.x = -0.52;
+      ring2.rotation.y = -0.32;
+      ring2.position.set(0, 1.5, zBack - 2);
       biomeGroup.add(ring2);
 
-      biomeAnimatedItems.push({ mesh: ring1, rotZ: 0.8 });
-      biomeAnimatedItems.push({ mesh: ring2, rotZ: -0.65 });
+      biomeAnimatedItems.push({ mesh: ring1, rotZ: 0.75 });
+      biomeAnimatedItems.push({ mesh: ring2, rotZ: -0.6 });
 
-      [-9.5, 9.5].forEach((px, i) => {
+      [-10.5, 10.5].forEach((px, i) => {
         const portal = new THREE.Mesh(
-          new THREE.RingGeometry(1.6, 2.2, 24),
-          new THREE.MeshBasicMaterial({ color: i === 0 ? 0x38bdf8 : 0xe879f9, side: THREE.DoubleSide })
+          new THREE.TorusGeometry(2.1, 0.18, 16, 40),
+          new THREE.MeshBasicMaterial({ color: i === 0 ? 0x38bdf8 : 0xe879f9 })
         );
-        portal.position.set(px, 1.5, zBack + 1.5);
-        portal.rotation.y = i === 0 ? 0.4 : -0.4;
+        portal.position.set(px, 1.2, zBack + 1);
+        portal.rotation.y = i === 0 ? 0.45 : -0.45;
         biomeGroup.add(portal);
         biomeAnimatedItems.push({ mesh: portal, rotZ: 1.4 });
       });
     } else if (biomeId === 'angelic_cloud') {
       // Celestial cloud pillows, concentric golden halos, and pearl temple spires
-      const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 });
-      for (let i = 0; i < 14; i++) {
-        const puff = new THREE.Mesh(new THREE.SphereGeometry(1.6 + (i % 3) * 0.6, 20, 20), cloudMat);
-        puff.position.set((i - 6.5) * 2.2, -5.5 + Math.sin(i) * 0.6, zBack + (i % 2));
+      const cloudMat = new THREE.MeshPhysicalMaterial({
+        color: 0xffffff,
+        roughness: 0.6,
+        clearcoat: 0.3
+      });
+      for (let i = 0; i < 16; i++) {
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(1.8 + (i % 3) * 0.65, 24, 24), cloudMat);
+        puff.position.set((i - 7.5) * 2.1, -5.6 + Math.sin(i) * 0.6, zBack + (i % 2) * 1.2);
         biomeGroup.add(puff);
       }
 
-      const haloMat = new THREE.MeshStandardMaterial({ color: 0xfde047, emissive: 0xfacc15, emissiveIntensity: 0.35 });
-      [5.5, 8.0, 10.5].forEach((r, idx) => {
-        const halo = new THREE.Mesh(new THREE.TorusGeometry(r, 0.14, 16, 64), haloMat);
-        halo.position.set(0, 4.2, zBack - 3);
-        halo.rotation.x = Math.PI / 2.3;
+      const haloMat = new THREE.MeshStandardMaterial({
+        color: 0xfde047,
+        emissive: 0xfacc15,
+        emissiveIntensity: 0.45,
+        metalness: 0.8,
+        roughness: 0.2
+      });
+      [6.2, 8.8, 11.4].forEach((r, idx) => {
+        const halo = new THREE.Mesh(new THREE.TorusGeometry(r, 0.14, 16, 72), haloMat);
+        halo.position.set(0, 4.0, zBack - 3.5);
+        halo.rotation.x = Math.PI / 2.4;
         biomeGroup.add(halo);
-        biomeAnimatedItems.push({ mesh: halo, rotZ: (idx + 1) * 0.25 });
+        biomeAnimatedItems.push({ mesh: halo, rotZ: (idx + 1) * 0.22 });
       });
 
-      [-10.5, -7.5, 7.5, 10.5].forEach((sx) => {
-        const spire = new THREE.Mesh(
-          new THREE.ConeGeometry(0.9, 9, 16),
+      [-11.5, -8.5, 8.5, 11.5].forEach((sx) => {
+        const spireBase = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.65, 0.85, 7, 16),
           new THREE.MeshPhysicalMaterial({ color: 0xfef9c3, clearcoat: 1 })
         );
-        spire.position.set(sx, 0.5, zBack - 1);
-        biomeGroup.add(spire);
+        spireBase.position.set(sx, -2.0, zBack - 1);
+        biomeGroup.add(spireBase);
+
+        const spireTop = new THREE.Mesh(
+          new THREE.ConeGeometry(0.85, 5.5, 16),
+          new THREE.MeshStandardMaterial({ color: 0xfde047, metalness: 0.6, roughness: 0.25 })
+        );
+        spireTop.position.set(sx, 4.2, zBack - 1);
+        biomeGroup.add(spireTop);
       });
     } else if (biomeId === 'pastel_lagoon') {
       // Turquoise ocean lagoon, sandy island atoll, tropical palm trees, and pastel beach parasols
       const ocean = new THREE.Mesh(
-        new THREE.CylinderGeometry(24, 24, 0.8, 36),
-        new THREE.MeshStandardMaterial({ color: 0x2dd4bf, roughness: 0.2 })
+        new THREE.CylinderGeometry(26, 26, 0.9, 40),
+        new THREE.MeshPhysicalMaterial({ color: 0x2dd4bf, roughness: 0.15, clearcoat: 0.8 })
       );
       ocean.position.set(0, -6.3, zBack);
       biomeGroup.add(ocean);
 
       const sand = new THREE.Mesh(
-        new THREE.CylinderGeometry(12, 14, 1.1, 32),
+        new THREE.CylinderGeometry(13, 15, 1.2, 36),
         new THREE.MeshStandardMaterial({ color: 0xfde68a, roughness: 0.8 })
       );
       sand.position.set(0, -6.0, zBack);
       biomeGroup.add(sand);
 
-      [-9.2, 9.2].forEach((tx) => {
+      [-10.2, 10.2].forEach((tx) => {
         const trunk = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.28, 0.45, 6.5, 12),
-          new THREE.MeshStandardMaterial({ color: 0x92400e })
+          new THREE.CylinderGeometry(0.28, 0.48, 7.2, 12),
+          new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.8 })
         );
-        trunk.position.set(tx, -2.5, zBack + 1);
+        trunk.position.set(tx, -2.2, zBack + 0.5);
         biomeGroup.add(trunk);
 
-        for (let f = 0; f < 5; f++) {
+        for (let f = 0; f < 6; f++) {
+          const ang = (f / 6) * Math.PI * 2;
           const frond = new THREE.Mesh(
-            new THREE.ConeGeometry(0.8, 2.8, 8),
-            new THREE.MeshStandardMaterial({ color: 0x34d399 })
+            new THREE.ConeGeometry(0.75, 3.1, 8),
+            new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.5 })
           );
-          frond.position.set(tx + Math.cos(f * 1.25) * 1.2, 1.0, zBack + 1 + Math.sin(f * 1.25) * 1.2);
-          frond.rotation.z = Math.cos(f * 1.25) * 0.9;
+          frond.position.set(tx + Math.cos(ang) * 1.35, 1.5, zBack + 0.5 + Math.sin(ang) * 1.35);
+          frond.rotation.z = Math.cos(ang) * 0.95;
           biomeGroup.add(frond);
         }
       });
 
-      [-6.5, 6.5].forEach((px, i) => {
-        const parasol = new THREE.Mesh(
-          new THREE.ConeGeometry(1.8, 1.1, 12),
-          new THREE.MeshStandardMaterial({ color: i === 0 ? 0xf472b6 : 0xa78bfa })
+      [-7.5, 7.5].forEach((px, i) => {
+        const pole = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.08, 0.08, 2.8, 8),
+          new THREE.MeshStandardMaterial({ color: 0xffffff })
         );
-        parasol.position.set(px, -3.5, zBack + 2);
+        pole.position.set(px, -4.4, zBack + 1.8);
+        biomeGroup.add(pole);
+
+        const parasol = new THREE.Mesh(
+          new THREE.ConeGeometry(2.0, 1.1, 16),
+          new THREE.MeshStandardMaterial({ color: i === 0 ? 0xf472b6 : 0xa78bfa, roughness: 0.4 })
+        );
+        parasol.position.set(px, -3.0, zBack + 1.8);
         biomeGroup.add(parasol);
-        biomeAnimatedItems.push({ mesh: parasol, rotY: 0.5 });
+        biomeAnimatedItems.push({ mesh: parasol, rotY: 0.45 });
       });
     } else if (biomeId === 'lofi_cafe') {
       // Warm walnut tabletop, oversized steaming coffee mug with saucer, vinyl record turntable, overhead string lamps
       const desk = new THREE.Mesh(
-        new THREE.BoxGeometry(36, 1.5, 16),
-        new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.55 })
+        new THREE.BoxGeometry(38, 1.6, 18),
+        new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.5 })
       );
       desk.position.set(0, -6.4, zBack);
       biomeGroup.add(desk);
 
-      // Mug & saucer on left
       const saucer = new THREE.Mesh(
-        new THREE.CylinderGeometry(2.4, 1.8, 0.3, 24),
-        new THREE.MeshStandardMaterial({ color: 0xfef3c7 })
+        new THREE.CylinderGeometry(2.5, 1.9, 0.32, 28),
+        new THREE.MeshPhysicalMaterial({ color: 0xfef3c7, clearcoat: 0.8 })
       );
-      saucer.position.set(-9.5, -5.5, zBack + 1);
+      saucer.position.set(-10.2, -5.5, zBack + 1);
       biomeGroup.add(saucer);
 
       const mug = new THREE.Mesh(
-        new THREE.CylinderGeometry(1.6, 1.4, 3.2, 24),
-        new THREE.MeshStandardMaterial({ color: 0xd97706 })
+        new THREE.CylinderGeometry(1.65, 1.45, 3.3, 28),
+        new THREE.MeshPhysicalMaterial({ color: 0xd97706, clearcoat: 0.7 })
       );
-      mug.position.set(-9.5, -3.8, zBack + 1);
+      mug.position.set(-10.2, -3.7, zBack + 1);
       biomeGroup.add(mug);
 
-      // Steaming rings
       for (let s = 0; s < 3; s++) {
         const steam = new THREE.Mesh(
-          new THREE.TorusGeometry(0.6 + s * 0.2, 0.08, 10, 24),
-          new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45 })
+          new THREE.TorusGeometry(0.65 + s * 0.22, 0.08, 12, 24),
+          new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.42 })
         );
-        steam.position.set(-9.5, -1.5 + s * 1.1, zBack + 1);
+        steam.position.set(-10.2, -1.4 + s * 1.1, zBack + 1);
         steam.rotation.x = Math.PI / 2;
         biomeGroup.add(steam);
         biomeAnimatedItems.push({ mesh: steam, floatOffset: s, baseY: steam.position.y });
       }
 
-      // Vinyl record turntable on right
-      const platter = new THREE.Mesh(
-        new THREE.CylinderGeometry(2.6, 2.6, 0.2, 32),
-        new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.2 })
+      const plinth = new THREE.Mesh(
+        new THREE.BoxGeometry(5.8, 0.6, 4.8),
+        new THREE.MeshStandardMaterial({ color: 0x78350f })
       );
-      platter.position.set(9.5, -5.4, zBack + 1.2);
+      plinth.position.set(10.2, -5.3, zBack + 1.2);
+      biomeGroup.add(plinth);
+
+      const platter = new THREE.Mesh(
+        new THREE.CylinderGeometry(2.2, 2.2, 0.18, 32),
+        new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.18 })
+      );
+      platter.position.set(10.2, -4.9, zBack + 1.2);
       biomeGroup.add(platter);
       biomeAnimatedItems.push({ mesh: platter, rotY: 2.0 });
 
-      // Overhead string lamps
       for (let l = -4; l <= 4; l++) {
         const bulb = new THREE.Mesh(
-          new THREE.SphereGeometry(0.38, 12, 12),
-          new THREE.MeshBasicMaterial({ color: 0xfde047 })
+          new THREE.SphereGeometry(0.36, 14, 14),
+          new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xfacc15, emissiveIntensity: 0.9 })
         );
-        bulb.position.set(l * 3.0, 8.6 - Math.cos(l * 0.4) * 0.6, zBack + 1);
+        bulb.position.set(l * 3.1, 8.8 - Math.cos(l * 0.4) * 0.55, zBack + 1);
         biomeGroup.add(bulb);
       }
     } else if (biomeId === 'gothic_balcony') {
-      // Pointed lancet arches, stained-glass rose window, stone balustrade, and distant cathedral spires
-      const balustrade = new THREE.Mesh(
-        new THREE.BoxGeometry(30, 2.2, 2),
-        new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.8 })
-      );
-      balustrade.position.set(0, -5.6, zBack);
-      biomeGroup.add(balustrade);
+      // Realistic Architectural Gothic Balcony: Carved stone balustrade with pillars, pointed lancet colonnade, multi-ring stained-glass rose window with tracery spokes, and twin cathedral spires
+      const stoneMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.72, metalness: 0.12 });
+      const darkStoneMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8, metalness: 0.15 });
 
-      const roseWindow = new THREE.Mesh(
-        new THREE.RingGeometry(1.2, 5.2, 16),
-        new THREE.MeshBasicMaterial({ color: 0xec4899, side: THREE.DoubleSide })
-      );
-      roseWindow.position.set(0, 3.2, zBack - 4);
-      biomeGroup.add(roseWindow);
-      biomeAnimatedItems.push({ mesh: roseWindow, rotZ: 0.25 });
+      // Balcony Floor Deck & Cornice
+      const balconyFloor = new THREE.Mesh(new THREE.BoxGeometry(34, 1.2, 8), darkStoneMat);
+      balconyFloor.position.set(0, -6.2, zBack + 1);
+      biomeGroup.add(balconyFloor);
 
-      [-11, -7.5, 7.5, 11].forEach((x) => {
-        const spire = new THREE.Mesh(
-          new THREE.ConeGeometry(1.1, 12, 8),
-          new THREE.MeshStandardMaterial({ color: 0x334155 })
-        );
-        spire.position.set(x, 1.5, zBack - 2);
+      // Bottom & Top Balustrade Rails
+      const bottomRail = new THREE.Mesh(new THREE.BoxGeometry(32, 0.45, 1.2), stoneMat);
+      bottomRail.position.set(0, -5.4, zBack + 2.2);
+      biomeGroup.add(bottomRail);
+
+      const topRail = new THREE.Mesh(new THREE.BoxGeometry(32, 0.45, 1.4), stoneMat);
+      topRail.position.set(0, -3.5, zBack + 2.2);
+      biomeGroup.add(topRail);
+
+      // Carved Baluster Pillars along the Balcony Rail
+      for (let bx = -14; bx <= 14; bx += 1.75) {
+        const baluster = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 1.6, 12), stoneMat);
+        baluster.position.set(bx, -4.45, zBack + 2.2);
+        biomeGroup.add(baluster);
+      }
+
+      // Flanking Pointed Lancet Arches & Ribbed Columns (Left & Right of Arena)
+      [-11.8, -8.4, 8.4, 11.8].forEach((colX, idx) => {
+        const column = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.62, 13.5, 16), stoneMat);
+        column.position.set(colX, 1.2, zBack - 0.5);
+        biomeGroup.add(column);
+
+        // Gothic Spire Finial atop each Column
+        const spire = new THREE.Mesh(new THREE.ConeGeometry(0.85, 5.2, 8), darkStoneMat);
+        spire.position.set(colX, 10.2, zBack - 0.5);
         biomeGroup.add(spire);
+
+        // Warm Candle Sconce on Column
+        const sconce = new THREE.Mesh(
+          new THREE.SphereGeometry(0.28, 12, 12),
+          new THREE.MeshStandardMaterial({ color: 0xfde047, emissive: 0xf97316, emissiveIntensity: 0.95 })
+        );
+        sconce.position.set(colX, 2.5, zBack + 0.3);
+        biomeGroup.add(sconce);
+        biomeAnimatedItems.push({ mesh: sconce, floatOffset: idx, baseY: 2.5 });
       });
+
+      // Pointed Gothic Archways spanning between outer columns
+      [-10.1, 10.1].forEach((archX) => {
+        const lancetArch = new THREE.Mesh(
+          new THREE.TorusGeometry(1.85, 0.28, 12, 24, Math.PI),
+          stoneMat
+        );
+        lancetArch.position.set(archX, 6.5, zBack - 0.5);
+        biomeGroup.add(lancetArch);
+      });
+
+      // Intricate Stained-Glass Rose Window Group (Positioned high & deep in cathedral wall)
+      const roseGroup = new THREE.Group();
+      roseGroup.position.set(0, 3.2, zBack - 4.5);
+      biomeGroup.add(roseGroup);
+
+      // Outer Stone Frame Ring
+      const outerStoneRing = new THREE.Mesh(new THREE.TorusGeometry(4.8, 0.42, 16, 48), darkStoneMat);
+      roseGroup.add(outerStoneRing);
+
+      const midStoneRing = new THREE.Mesh(new THREE.TorusGeometry(2.9, 0.24, 14, 40), stoneMat);
+      roseGroup.add(midStoneRing);
+
+      // 12 Radial Stone Tracery Spokes & Stained-Glass Petals
+      const petalColors = [0x38bdf8, 0xa855f7, 0xf43f5e, 0xfbbf24, 0x34d399, 0x60a5fa];
+      for (let k = 0; k < 12; k++) {
+        const ang = (k / 12) * Math.PI * 2;
+        const spoke = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 9.2, 8), stoneMat);
+        spoke.rotation.z = ang;
+        roseGroup.add(spoke);
+
+        const glassPetal = new THREE.Mesh(
+          new THREE.CircleGeometry(0.72, 12),
+          new THREE.MeshPhysicalMaterial({
+            color: petalColors[k % petalColors.length],
+            emissive: petalColors[k % petalColors.length],
+            emissiveIntensity: 0.35,
+            transparent: true,
+            opacity: 0.68,
+            side: THREE.DoubleSide
+          })
+        );
+        glassPetal.position.set(Math.cos(ang) * 3.8, Math.sin(ang) * 3.8, -0.05);
+        roseGroup.add(glassPetal);
+      }
+
+      biomeAnimatedItems.push({ mesh: roseGroup, rotZ: 0.12 });
     } else if (biomeId === 'gothic_castle') {
       // 4 crenelated corner turrets, curtain walls with battlements, and glowing torch braziers
       const wall = new THREE.Mesh(
-        new THREE.BoxGeometry(24, 8, 1.5),
+        new THREE.BoxGeometry(26, 8.5, 1.8),
         new THREE.MeshStandardMaterial({ color: 0x4b5563, roughness: 0.85 })
       );
       wall.position.set(0, -2.5, zBack - 3);
       biomeGroup.add(wall);
 
-      [-11, -7.5, 7.5, 11].forEach((tx, idx) => {
+      [-11.5, -8.2, 8.2, 11.5].forEach((tx, idx) => {
         const turret = new THREE.Mesh(
-          new THREE.CylinderGeometry(1.4, 1.6, 13, 12),
-          new THREE.MeshStandardMaterial({ color: 0x374151 })
+          new THREE.CylinderGeometry(1.45, 1.65, 13.5, 16),
+          new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.8 })
         );
         turret.position.set(tx, 0, zBack - (idx % 2) * 2);
         biomeGroup.add(turret);
 
-        const flame = new THREE.Mesh(
-          new THREE.OctahedronGeometry(0.55, 1),
-          new THREE.MeshBasicMaterial({ color: 0xf97316 })
+        const roof = new THREE.Mesh(
+          new THREE.ConeGeometry(1.75, 3.2, 16),
+          new THREE.MeshStandardMaterial({ color: 0x1e293b })
         );
-        flame.position.set(tx, 7.0, zBack - (idx % 2) * 2);
+        roof.position.set(tx, 8.2, zBack - (idx % 2) * 2);
+        biomeGroup.add(roof);
+
+        const flame = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.52, 1),
+          new THREE.MeshStandardMaterial({ color: 0xfde047, emissive: 0xf97316, emissiveIntensity: 0.95 })
+        );
+        flame.position.set(tx, 5.2, zBack + 0.5);
         biomeGroup.add(flame);
-        biomeAnimatedItems.push({ mesh: flame, rotY: 2.5, floatOffset: idx, baseY: 7.0 });
+        biomeAnimatedItems.push({ mesh: flame, rotY: 2.4, floatOffset: idx, baseY: 5.2 });
       });
     } else if (biomeId === 'enchanted_forest') {
       // Multi-tiered pine trees, winding stream, mossy boulders, and fireflies
-      const stream = new THREE.Mesh(
-        new THREE.BoxGeometry(7, 0.3, 20),
-        new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.15 })
+      const forestFloor = new THREE.Mesh(
+        new THREE.CylinderGeometry(26, 26, 1, 36),
+        new THREE.MeshStandardMaterial({ color: 0x064e3b, roughness: 0.9 })
       );
-      stream.position.set(0, -6.1, zBack);
+      forestFloor.position.set(0, -6.4, zBack);
+      biomeGroup.add(forestFloor);
+
+      const stream = new THREE.Mesh(
+        new THREE.BoxGeometry(7.5, 0.35, 22),
+        new THREE.MeshPhysicalMaterial({ color: 0x38bdf8, roughness: 0.15, clearcoat: 0.9 })
+      );
+      stream.position.set(0, -6.0, zBack);
       biomeGroup.add(stream);
 
-      [-10.5, -8, 8, 10.5].forEach((px) => {
+      [-11.2, -8.5, 8.5, 11.2].forEach((px) => {
         for (let t = 0; t < 3; t++) {
           const cone = new THREE.Mesh(
-            new THREE.ConeGeometry(2.2 - t * 0.45, 3.6, 10),
-            new THREE.MeshStandardMaterial({ color: 0x065f46 })
+            new THREE.ConeGeometry(2.3 - t * 0.45, 3.8, 12),
+            new THREE.MeshStandardMaterial({ color: 0x047857, roughness: 0.75 })
           );
-          cone.position.set(px, -3.2 + t * 2.2, zBack - 1);
+          cone.position.set(px, -3.0 + t * 2.3, zBack - 1);
           biomeGroup.add(cone);
         }
       });
 
-      for (let f = 0; f < 16; f++) {
+      for (let f = 0; f < 18; f++) {
         const fly = new THREE.Mesh(
-          new THREE.SphereGeometry(0.18, 8, 8),
-          new THREE.MeshBasicMaterial({ color: 0xbef264 })
+          new THREE.SphereGeometry(0.18, 10, 10),
+          new THREE.MeshBasicMaterial({ color: 0xd9f99d })
         );
-        fly.position.set((Math.random() - 0.5) * 22, (Math.random() - 0.2) * 12, zBack + 2);
+        fly.position.set((Math.random() - 0.5) * 24, (Math.random() - 0.2) * 12, zBack + 1.5);
         biomeGroup.add(fly);
         biomeAnimatedItems.push({ mesh: fly, floatOffset: f, baseY: fly.position.y });
       }
     } else if (biomeId === 'cyberpunk_terrace') {
       // Rooftop terrace deck, neon railings, and surrounding metropolis skyscrapers
       const deck = new THREE.Mesh(
-        new THREE.BoxGeometry(28, 1.2, 12),
-        new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4 })
+        new THREE.BoxGeometry(32, 1.2, 14),
+        new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.35 })
       );
       deck.position.set(0, -6.2, zBack);
       biomeGroup.add(deck);
 
       const neonRail = new THREE.Mesh(
-        new THREE.BoxGeometry(26, 0.18, 0.18),
+        new THREE.BoxGeometry(28, 0.18, 0.18),
         new THREE.MeshBasicMaterial({ color: 0x22d3ee })
       );
       neonRail.position.set(0, -4.5, zBack + 2);
@@ -664,104 +801,104 @@
 
       for (let b = -5; b <= 5; b++) {
         if (Math.abs(b) < 2) continue;
-        const h = 10 + Math.abs(b * 1.8);
+        const h = 11 + Math.abs(b * 1.9);
         const tower = new THREE.Mesh(
-          new THREE.BoxGeometry(2.2, h, 2.2),
-          new THREE.MeshStandardMaterial({ color: 0x0f172a, emissive: 0x312e81, emissiveIntensity: 0.35 })
+          new THREE.BoxGeometry(2.4, h, 2.4),
+          new THREE.MeshStandardMaterial({ color: 0x0f172a, emissive: 0x312e81, emissiveIntensity: 0.45 })
         );
-        tower.position.set(b * 2.5, -6 + h / 2, zBack - 4);
+        tower.position.set(b * 2.6, -6 + h / 2, zBack - 4);
         biomeGroup.add(tower);
       }
     } else if (biomeId === 'sandstone_desert') {
       // Ancient pyramid, layered red-rock canyon mesa, natural sandstone arch, oasis pool, and cacti
       const sandFloor = new THREE.Mesh(
-        new THREE.CylinderGeometry(24, 24, 1, 32),
+        new THREE.CylinderGeometry(26, 26, 1.1, 36),
         new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.85 })
       );
       sandFloor.position.set(0, -6.3, zBack);
       biomeGroup.add(sandFloor);
 
       const pyramid = new THREE.Mesh(
-        new THREE.ConeGeometry(6.5, 8.5, 4),
+        new THREE.ConeGeometry(7.0, 9.2, 4),
         new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.75 })
       );
-      pyramid.position.set(-8.5, -1.8, zBack - 3);
+      pyramid.position.set(-9.2, -1.6, zBack - 3);
       pyramid.rotation.y = Math.PI / 4;
       biomeGroup.add(pyramid);
 
       const arch = new THREE.Mesh(
-        new THREE.TorusGeometry(4.2, 0.85, 12, 24, Math.PI),
-        new THREE.MeshStandardMaterial({ color: 0xb45309 })
+        new THREE.TorusGeometry(4.5, 0.9, 14, 28, Math.PI),
+        new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.8 })
       );
-      arch.position.set(8.5, -5.5, zBack - 2);
+      arch.position.set(9.2, -5.5, zBack - 2);
       biomeGroup.add(arch);
 
-      [-7, 7.5].forEach((cx) => {
+      [-7.8, 8.2].forEach((cx) => {
         const cactus = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.35, 0.4, 3.8, 10),
+          new THREE.CylinderGeometry(0.36, 0.42, 4.0, 12),
           new THREE.MeshStandardMaterial({ color: 0x15803d })
         );
-        cactus.position.set(cx, -4.2, zBack + 2);
+        cactus.position.set(cx, -4.1, zBack + 1.8);
         biomeGroup.add(cactus);
       });
     } else if (biomeId === 'abyssal_reef') {
       // Underwater coral clusters, seabed, and rising bubbles
       const seabed = new THREE.Mesh(
-        new THREE.CylinderGeometry(24, 24, 1.2, 32),
+        new THREE.CylinderGeometry(26, 26, 1.2, 36),
         new THREE.MeshStandardMaterial({ color: 0x0e7490, roughness: 0.7 })
       );
       seabed.position.set(0, -6.3, zBack);
       biomeGroup.add(seabed);
 
-      [-9.5, -7.5, 7.5, 9.5].forEach((cx, i) => {
+      [-10.2, -8.0, 8.0, 10.2].forEach((cx, i) => {
         const coral = new THREE.Mesh(
-          new THREE.DodecahedronGeometry(1.6),
-          new THREE.MeshStandardMaterial({ color: i % 2 ? 0xf43f5e : 0xa855f7, roughness: 0.5 })
+          new THREE.DodecahedronGeometry(1.75),
+          new THREE.MeshStandardMaterial({ color: i % 2 ? 0xf43f5e : 0xa855f7, roughness: 0.45 })
         );
-        coral.position.set(cx, -4.8, zBack + 1);
+        coral.position.set(cx, -4.7, zBack + 1);
         biomeGroup.add(coral);
       });
 
-      for (let b = 0; b < 14; b++) {
+      for (let b = 0; b < 16; b++) {
         const bub = new THREE.Mesh(
-          new THREE.SphereGeometry(0.28 + (b % 3) * 0.12, 12, 12),
-          new THREE.MeshPhysicalMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.55 })
+          new THREE.SphereGeometry(0.28 + (b % 3) * 0.12, 14, 14),
+          new THREE.MeshPhysicalMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.6, clearcoat: 1 })
         );
-        bub.position.set((b - 6.5) * 1.8, -4 + (b % 5) * 2.2, zBack + 1.5);
+        bub.position.set((b - 7.5) * 1.8, -4 + (b % 5) * 2.2, zBack + 1.5);
         biomeGroup.add(bub);
         biomeAnimatedItems.push({ mesh: bub, floatOffset: b, baseY: bub.position.y });
       }
     } else if (biomeId === 'alpine_meadows') {
       // Rolling green hills and snow-capped mountain range
-      [-8, 0, 8].forEach((hx, i) => {
+      [-8.5, 0, 8.5].forEach((hx, i) => {
         const hill = new THREE.Mesh(
-          new THREE.SphereGeometry(8.5, 24, 16),
+          new THREE.SphereGeometry(9.0, 28, 20),
           new THREE.MeshStandardMaterial({ color: i === 1 ? 0x22c55e : 0x16a34a, roughness: 0.8 })
         );
-        hill.position.set(hx, -11.8, zBack + (i === 1 ? 1 : -1));
+        hill.position.set(hx, -12.2, zBack + (i === 1 ? 1 : -1));
         biomeGroup.add(hill);
       });
 
-      [-10, -4.5, 4.5, 10].forEach((mx, i) => {
+      [-10.5, -5.0, 5.0, 10.5].forEach((mx, i) => {
         const mtn = new THREE.Mesh(
-          new THREE.ConeGeometry(4.5, 11 + (i % 2) * 2.5, 8),
+          new THREE.ConeGeometry(4.8, 11.5 + (i % 2) * 2.5, 10),
           new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.7 })
         );
-        mtn.position.set(mx, -0.5, zBack - 4);
+        mtn.position.set(mx, -0.4, zBack - 4);
         biomeGroup.add(mtn);
 
         const cap = new THREE.Mesh(
-          new THREE.ConeGeometry(1.9, 4.2, 8),
+          new THREE.ConeGeometry(2.05, 4.4, 10),
           new THREE.MeshStandardMaterial({ color: 0xffffff })
         );
-        cap.position.set(mx, 3.4 + (i % 2) * 1.1, zBack - 4);
+        cap.position.set(mx, 3.6 + (i % 2) * 1.1, zBack - 4);
         biomeGroup.add(cap);
       });
     }
   }
 
   /* =========================================================
-   * THREE.JS 3D SCENE, RECTANGULAR ARENA & VISIBLE 3D CANNON
+   * THREE.JS 3D SCENE, RECTANGULAR ARENA & VISIBLE CANNON BALL
    * ========================================================= */
   function initThreeScene() {
     const container = document.getElementById('canvas-container');
@@ -780,10 +917,10 @@
     renderer.shadowMap.enabled = true;
     container.appendChild(renderer.domElement);
 
-    ambientLight = new THREE.AmbientLight(0xffffff, 0.78);
+    ambientLight = new THREE.AmbientLight(0xffffff, 0.82);
     scene.add(ambientLight);
 
-    sunLight = new THREE.DirectionalLight(0xfff4d6, 1.15);
+    sunLight = new THREE.DirectionalLight(0xfff4d6, 1.18);
     sunLight.position.set(8, 14, 12);
     sunLight.castShadow = true;
     scene.add(sunLight);
@@ -824,13 +961,13 @@
     const railHeight = (ARENA_BOUNDS.top - ARENA_BOUNDS.bottom) + ARENA_BOUNDS.radius * 2;
     const centerY = (ARENA_BOUNDS.top + ARENA_BOUNDS.bottom) / 2;
 
-    // Subtle frosted glass backplate so the rectangular rink is always clearly defined
     const backplate = new THREE.Mesh(
       new THREE.PlaneGeometry(railWidth, railHeight),
       new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
-        opacity: 0.06,
+        opacity: 0.05,
+        depthWrite: false,
         side: THREE.DoubleSide
       })
     );
@@ -845,7 +982,6 @@
       metalness: 0.2
     });
 
-    // Left & Right Vertical Rails
     const vRailGeo = new THREE.CylinderGeometry(0.14, 0.14, railHeight, 18);
     const leftRail = new THREE.Mesh(vRailGeo, railMat);
     leftRail.position.set(ARENA_BOUNDS.left - ARENA_BOUNDS.radius, centerY, 0);
@@ -855,18 +991,16 @@
     rightRail.position.set(ARENA_BOUNDS.right + ARENA_BOUNDS.radius, centerY, 0);
     arenaGroup.add(rightRail);
 
-    // Top Horizontal Rail
     const hRailGeo = new THREE.CylinderGeometry(0.14, 0.14, railWidth + 0.28, 18);
     const topRail = new THREE.Mesh(hRailGeo, railMat);
     topRail.rotation.z = Math.PI / 2;
     topRail.position.set(0, ARENA_BOUNDS.top + ARENA_BOUNDS.radius, 0);
     arenaGroup.add(topRail);
 
-    // Bottom Danger / Loss Line (Completes the rectangular frame right at the cannon level)
     const dangerMat = new THREE.MeshBasicMaterial({
       color: 0xf43f5e,
       transparent: true,
-      opacity: 0.72
+      opacity: 0.75
     });
     const bottomRail = new THREE.Mesh(
       new THREE.CylinderGeometry(0.08, 0.08, railWidth, 16),
@@ -882,44 +1016,48 @@
     cannonGroup.position.set(0, ARENA_BOUNDS.bottom, 0);
     scene.add(cannonGroup);
 
-    // Pedestal Dome Base
+    // Sleek Pedestal Base
     const baseMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.85, 1.15, 0.55, 24),
-      new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.65, roughness: 0.25 })
+      new THREE.CylinderGeometry(0.78, 1.08, 0.48, 24),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.7, roughness: 0.22 })
     );
-    baseMesh.position.set(0, -0.35, 0);
+    baseMesh.position.set(0, -0.32, 0);
     cannonGroup.add(baseMesh);
 
-    // Rotating Cannon Barrel Group
+    // Secondary Next-Ball Preview Sphere sitting right beside the Cannon Base
+    const nextGeo = new THREE.SphereGeometry(ARENA_BOUNDS.radius * 0.62, 24, 24);
+    nextPreviewMesh = new THREE.Mesh(nextGeo, getMaterialForType(state.nextTypeIndex));
+    nextPreviewMesh.position.set(1.25, -0.15, 0.25);
+    cannonGroup.add(nextPreviewMesh);
+
+    // Rotating Cannon Cradle & Barrel Group
     cannonBarrel = new THREE.Group();
     cannonGroup.add(cannonBarrel);
 
     const barrelTube = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.62, 0.72, 1.35, 24, 1, true),
-      new THREE.MeshPhysicalMaterial({
-        color: 0x93c5fd,
-        metalness: 0.45,
-        roughness: 0.2,
-        transparent: true,
-        opacity: 0.78,
-        side: THREE.DoubleSide
+      new THREE.CylinderGeometry(0.56, 0.68, 0.75, 24),
+      new THREE.MeshStandardMaterial({
+        color: 0x334155,
+        metalness: 0.6,
+        roughness: 0.25
       })
     );
-    barrelTube.position.set(0, 0.45, 0);
+    barrelTube.position.set(0, 0.22, -0.08);
     cannonBarrel.add(barrelTube);
 
-    const muzzleRing = new THREE.Mesh(
-      new THREE.TorusGeometry(0.63, 0.08, 12, 24),
-      new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+    // Glowing Color-Matched Muzzle Ring
+    muzzleRingMesh = new THREE.Mesh(
+      new THREE.TorusGeometry(0.58, 0.09, 14, 28),
+      new THREE.MeshBasicMaterial({ color: SPHERE_TYPES[state.currentTypeIndex].bubbleColor })
     );
-    muzzleRing.rotation.x = Math.PI / 2;
-    muzzleRing.position.set(0, 1.12, 0);
-    cannonBarrel.add(muzzleRing);
+    muzzleRingMesh.rotation.x = Math.PI / 2;
+    muzzleRingMesh.position.set(0, 0.62, 0);
+    cannonBarrel.add(muzzleRingMesh);
 
-    // Loaded Sphere clearly visible inside/atop the Cannon
-    const baseGeo = new THREE.SphereGeometry(ARENA_BOUNDS.radius, 32, 32);
+    // Loaded Sphere Perched Prominently at the Top Muzzle so it is 100% Unobstructed & Visible
+    const baseGeo = new THREE.SphereGeometry(ARENA_BOUNDS.radius * 1.04, 32, 32);
     launcherMesh = new THREE.Mesh(baseGeo, getMaterialForType(state.currentTypeIndex));
-    launcherMesh.position.set(0, 0.35, 0.1);
+    launcherMesh.position.set(0, 0.96, 0.22);
     cannonBarrel.add(launcherMesh);
 
     // Dashed Aiming Trajectory Line
@@ -956,6 +1094,8 @@
   function clearArenaSpheres() {
     gridBubbles.forEach((b) => scene.remove(b.mesh));
     gridBubbles = [];
+    fallingSpheres.forEach((f) => scene.remove(f.mesh));
+    fallingSpheres = [];
     if (activeProjectile) {
       scene.remove(activeProjectile.mesh);
       activeProjectile = null;
@@ -1008,8 +1148,8 @@
     cannonBarrel.rotation.z = -state.aimAngle;
 
     const points = [];
-    let px = Math.sin(state.aimAngle) * 0.5;
-    let py = ARENA_BOUNDS.bottom + Math.cos(state.aimAngle) * 0.5;
+    let px = Math.sin(state.aimAngle) * 0.96;
+    let py = ARENA_BOUNDS.bottom + Math.cos(state.aimAngle) * 0.96;
     let dx = Math.sin(state.aimAngle);
     let dy = Math.cos(state.aimAngle);
 
@@ -1080,7 +1220,7 @@
       return true;
     }
 
-    const loseThresholdY = ARENA_BOUNDS.bottom + ARENA_BOUNDS.radius * 1.75;
+    const loseThresholdY = ARENA_BOUNDS.bottom + ARENA_BOUNDS.radius * 1.85;
     for (let i = 0; i < gridBubbles.length; i++) {
       if (gridBubbles[i].y <= loseThresholdY) {
         triggerGameOver(false);
@@ -1088,6 +1228,57 @@
       }
     }
     return false;
+  }
+
+  /* =========================================================
+   * DETACHED FLOATING SPHERES GRAVITY AVALANCHE
+   * ========================================================= */
+  function dropDetachedSpheres() {
+    if (gridBubbles.length === 0) return;
+
+    const anchored = new Set();
+    const queue = [];
+    const topThreshold = ARENA_BOUNDS.top - ARENA_BOUNDS.radius * 0.95;
+
+    // 1. Seed BFS with all spheres touching the top ceiling row
+    for (let i = 0; i < gridBubbles.length; i++) {
+      if (gridBubbles[i].y >= topThreshold) {
+        anchored.add(gridBubbles[i]);
+        queue.push(gridBubbles[i]);
+      }
+    }
+
+    // 2. Traverse all spheres touching an anchored sphere
+    while (queue.length > 0) {
+      const curr = queue.shift();
+      for (let i = 0; i < gridBubbles.length; i++) {
+        const neighbor = gridBubbles[i];
+        if (!anchored.has(neighbor)) {
+          const d = Math.hypot(curr.x - neighbor.x, curr.y - neighbor.y);
+          if (d <= ARENA_BOUNDS.radius * 2.38) {
+            anchored.add(neighbor);
+            queue.push(neighbor);
+          }
+        }
+      }
+    }
+
+    // 3. Any sphere not connected to the ceiling immediately detaches and falls
+    const detached = gridBubbles.filter((b) => !anchored.has(b));
+    if (detached.length > 0) {
+      gridBubbles = gridBubbles.filter((b) => anchored.has(b));
+      detached.forEach((b) => {
+        fallingSpheres.push({
+          mesh: b.mesh,
+          x: b.x,
+          y: b.y,
+          vx: (Math.random() - 0.5) * 2.4,
+          vy: -2.5 - Math.random() * 2.0
+        });
+      });
+      state.score += detached.length * 35;
+      updateRecordsAndHUD();
+    }
   }
 
   /* =========================================================
@@ -1103,8 +1294,8 @@
 
     const geo = new THREE.SphereGeometry(ARENA_BOUNDS.radius, 28, 28);
     const mesh = new THREE.Mesh(geo, getMaterialForType(state.currentTypeIndex));
-    const startX = Math.sin(state.aimAngle) * 0.45;
-    const startY = ARENA_BOUNDS.bottom + Math.cos(state.aimAngle) * 0.45;
+    const startX = Math.sin(state.aimAngle) * 0.96;
+    const startY = ARENA_BOUNDS.bottom + Math.cos(state.aimAngle) * 0.96;
     mesh.position.set(startX, startY, 0);
     scene.add(mesh);
 
@@ -1155,6 +1346,9 @@
       gridBubbles = gridBubbles.filter((b) => !visited.has(b));
       state.score += cluster.length * 25;
       triggerHaptic(25);
+
+      // Immediately drop any lower-level balls that lost their upper support!
+      dropDetachedSpheres();
       updateRecordsAndHUD();
     }
 
@@ -1168,6 +1362,15 @@
   const duskColor = new THREE.Color('#fbcfe8');
   const nightColor = new THREE.Color('#0f172a');
 
+  function syncSkyButtonsUI() {
+    document.querySelectorAll('#bg-options .option-pill').forEach((b) => {
+      b.classList.toggle('active', b.getAttribute('data-bg') === state.bgMode);
+    });
+    document.querySelectorAll('#pause-sky-options .pause-sky-btn').forEach((b) => {
+      b.classList.toggle('active', b.getAttribute('data-bg') === state.bgMode);
+    });
+  }
+
   function updateSkyLighting(dt) {
     if (state.bgMode === 'day') {
       state.skyTime += dt * 0.015 * state.cycleSpeed;
@@ -1178,8 +1381,8 @@
     }
 
     let phaseFactor = (Math.sin(state.skyTime * Math.PI * 2) + 1) / 2;
-    if (state.bgMode === 'day') phaseFactor = 0.75 + 0.25 * phaseFactor;
-    if (state.bgMode === 'night') phaseFactor = 0.22 * phaseFactor;
+    if (state.bgMode === 'day') phaseFactor = 0.78 + 0.22 * phaseFactor;
+    if (state.bgMode === 'night') phaseFactor = 0.2 * phaseFactor;
 
     const currentBg = new THREE.Color();
     if (phaseFactor > 0.5) {
@@ -1191,7 +1394,7 @@
     }
 
     scene.background = currentBg;
-    sunLight.intensity = 0.35 + phaseFactor * 0.95;
+    sunLight.intensity = 0.4 + phaseFactor * 0.95;
     sunLight.position.x = Math.cos(state.skyTime * Math.PI * 2) * 14;
     sunLight.position.y = Math.sin(state.skyTime * Math.PI * 2) * 14 + 4;
     starsMesh.material.opacity = Math.max(0, 1 - phaseFactor * 1.6);
@@ -1214,6 +1417,15 @@
 
     if (launcherMesh) {
       launcherMesh.material = getMaterialForType(state.currentTypeIndex);
+    }
+    if (muzzleRingMesh) {
+      muzzleRingMesh.material.color.set(curr.bubbleColor);
+    }
+    if (nextPreviewMesh) {
+      nextPreviewMesh.material = getMaterialForType(state.nextTypeIndex);
+    }
+    if (trajectoryLine) {
+      trajectoryLine.material.color.set(curr.bubbleColor);
     }
     gridBubbles.forEach((b) => {
       b.mesh.material = getMaterialForType(b.typeIndex);
@@ -1286,6 +1498,7 @@
     }
 
     buildBiome3D(state.biome);
+    syncSkyButtonsUI();
     syncArsenalUI();
     updateRecordsAndHUD();
 
@@ -1301,7 +1514,7 @@
   }
 
   /* =========================================================
-   * INPUT CONTROLS (KEYBOARD + HAPTIC TOUCH SLIDE + BUTTONS)
+   * INPUT CONTROLS (KEYBOARD + DRAG-TO-AIM + DOUBLE-TAP FIRE)
    * ========================================================= */
   function setAimAngleFromNormalized(nx) {
     state.aimAngle = Math.max(-1.18, Math.min(1.18, nx * 1.15));
@@ -1336,19 +1549,29 @@
     }
   });
 
-  // Haptic Touch Slide & Pointer Aiming on 3D Canvas
+  // Touch Drag-to-Aim + Double-Tap-to-Fire (Desktop Mouse Click also Fires)
   const canvasContainer = document.getElementById('canvas-container');
   let isPointerDragging = false;
   let lastHapticTick = 0;
+  let lastTouchTapTime = 0;
 
   canvasContainer.addEventListener('pointerdown', (e) => {
     isPointerDragging = true;
     const nx = (e.clientX / window.innerWidth) * 2 - 1;
     setAimAngleFromNormalized(nx);
+
     if (e.pointerType === 'mouse') {
       fireSphere();
     } else {
-      triggerHaptic(8);
+      const now = performance.now();
+      if (now - lastTouchTapTime < 320) {
+        // Double-Tap on Touch Screen disperses/fires the ball!
+        fireSphere();
+        lastTouchTapTime = 0;
+      } else {
+        lastTouchTapTime = now;
+        triggerHaptic(6);
+      }
     }
   });
 
@@ -1364,11 +1587,7 @@
     }
   });
 
-  window.addEventListener('pointerup', (e) => {
-    if (isPointerDragging && e.pointerType !== 'mouse') {
-      isPointerDragging = false;
-      fireSphere();
-    }
+  window.addEventListener('pointerup', () => {
     isPointerDragging = false;
   });
 
@@ -1413,7 +1632,7 @@
   });
 
   /* =========================================================
-   * INITIATION SCREENS, BIOME SELECTION & PAUSE / SAVE / REMATCH
+   * INITIATION SCREENS, PAUSE MENU SCENE SWITCHER & REMATCH
    * ========================================================= */
   function checkSavedSessionBanner() {
     const raw = localStorage.getItem(STORAGE_KEYS.SAVED_SESSION);
@@ -1450,8 +1669,6 @@
   // Screen 2: 12 Interactive Biomes, Background & Ball Options
   document.querySelectorAll('#biome-options .biome-pill').forEach((btn) => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('#biome-options .biome-pill').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
       state.biome = btn.getAttribute('data-biome');
       buildBiome3D(state.biome);
     });
@@ -1459,9 +1676,8 @@
 
   document.querySelectorAll('#bg-options .option-pill').forEach((btn) => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('#bg-options .option-pill').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
       state.bgMode = btn.getAttribute('data-bg');
+      syncSkyButtonsUI();
     });
   });
 
@@ -1484,10 +1700,26 @@
     startNewOrSavedSession(null);
   });
 
-  // Pause & Save to Home
+  // Pause Modal: Live Scene & Sky Switching
+  if (dom.pauseBiomeSelect) {
+    dom.pauseBiomeSelect.addEventListener('change', (e) => {
+      state.biome = e.target.value;
+      buildBiome3D(state.biome);
+    });
+  }
+
+  document.querySelectorAll('#pause-sky-options .pause-sky-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.bgMode = btn.getAttribute('data-bg');
+      syncSkyButtonsUI();
+    });
+  });
+
   document.getElementById('pause-btn').addEventListener('click', () => {
     if (!state.isRunning || state.isPaused) return;
     state.isPaused = true;
+    syncActiveBiomeControls();
+    syncSkyButtonsUI();
     dom.pauseModal.classList.remove('hidden');
   });
 
@@ -1553,6 +1785,14 @@
     updateSkyLighting(dt);
     updateTrajectoryProjection();
 
+    // Rotate Loaded Cannon Sphere & Next Preview gently so Sports Textures are unmistakable
+    if (launcherMesh) {
+      launcherMesh.rotation.y += 1.4 * dt;
+    }
+    if (nextPreviewMesh) {
+      nextPreviewMesh.rotation.y -= 1.2 * dt;
+    }
+
     // Animate Interactive 3D Biome Elements
     for (let i = 0; i < biomeAnimatedItems.length; i++) {
       const item = biomeAnimatedItems[i];
@@ -1560,6 +1800,22 @@
       if (item.rotZ) item.mesh.rotation.z += item.rotZ * dt;
       if (item.floatOffset !== undefined) {
         item.mesh.position.y = item.baseY + Math.sin(now * 0.0025 + item.floatOffset) * 0.45;
+      }
+    }
+
+    // Animate Detached Falling Spheres (Gravity Avalanche)
+    for (let i = fallingSpheres.length - 1; i >= 0; i--) {
+      const f = fallingSpheres[i];
+      f.vy -= 26.0 * dt;
+      f.x += f.vx * dt;
+      f.y += f.vy * dt;
+      f.mesh.position.set(f.x, f.y, 0.25);
+      f.mesh.rotation.x += 6 * dt;
+      f.mesh.rotation.z += 5 * dt;
+
+      if (f.y < ARENA_BOUNDS.bottom - 5.0) {
+        scene.remove(f.mesh);
+        fallingSpheres.splice(i, 1);
       }
     }
 
@@ -1611,6 +1867,7 @@
   initThreeScene();
   calibrateScreenScaling();
   checkSavedSessionBanner();
+  syncArsenalUI();
   updateRecordsAndHUD();
   requestAnimationFrame(animate);
 })();
