@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>ZephyrSphere — 3D Aerial Sphere Shooter</title>
+  <!-- Custom SVG App Icon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23a8edea'/%3E%3Cstop offset='50%25' stop-color='%23fed6e3'/%3E%3Cstop offset='100%25' stop-color='%23c3cfe2'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='28' fill='url(%23g)' stroke='%23ffffff' stroke-width='3'/%3E%3Ccircle cx='22' cy='22' r='8' fill='rgba(255,255,255,0.65)'/%3E%3Cpath d='M18 42 Q32 28 46 42' stroke='%236a85b6' stroke-width='4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <!-- 3D Viewport -->
+  <div id="canvas-container"></div>
+
+  <!-- Global Top Utility Bar (Theme + Show All UI) -->
+  <div id="top-utility-bar">
+    <div class="brand-badge ui-surface" data-surface>
+      <svg class="brand-icon" viewBox="0 0 64 64" width="24" height="24">
+        <defs>
+          <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#8ec5fc" />
+            <stop offset="100%" stop-color="#e0c3fc" />
+          </linearGradient>
+        </defs>
+        <circle cx="32" cy="32" r="28" fill="url(#brandGrad)" />
+        <circle cx="23" cy="22" r="7" fill="rgba(255,255,255,0.75)" />
+        <path d="M18 40 Q32 26 46 40" stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round" />
+      </svg>
+      <span>ZephyrSphere</span>
+    </div>
+
+    <div class="utility-actions">
+      <button id="unhide-all-btn" class="pill-btn ui-surface hidden" data-surface title="Restore Hidden Panels">
+        Restore All UI
+      </button>
+      <button id="theme-toggle-btn" class="pill-btn ui-surface" data-surface title="Switch Theme">
+        <span id="theme-label">Dark Mode</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- INITIATION SCREEN 1: Device Selection -->
+  <section id="screen-device" class="init-screen active">
+    <div class="modal-card ui-surface" data-surface>
+      <div class="modal-header">
+        <h1>ZephyrSphere</h1>
+        <p>Step 1 of 2 — Select your playing device to calibrate aspect ratio & controls</p>
+      </div>
+
+      <div class="device-grid">
+        <button class="device-card ui-surface" data-surface data-device="desktop">
+          <div class="device-svg">💻</div>
+          <strong>Desktop</strong>
+          <span>Keyboard + Mouse Precision</span>
+        </button>
+        <button class="device-card ui-surface" data-surface data-device="tablet">
+          <div class="device-svg">📱</div>
+          <strong>Tablet</strong>
+          <span>Balanced Touch HUD + Dual Pad</span>
+        </button>
+        <button class="device-card ui-surface" data-surface data-device="mobile">
+          <div class="device-svg">📲</div>
+          <strong>Mobile</strong>
+          <span>Compact Ergonomic Thumb Controls</span>
+        </button>
+      </div>
+
+      <div id="saved-game-banner" class="saved-banner ui-surface hidden" data-surface>
+        <div>
+          <strong>Saved Session Found</strong>
+          <p id="saved-game-details">Score: 0 | Time: 00:00</p>
+        </div>
+        <button id="resume-saved-btn" class="primary-btn">Resume Saved Game</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- INITIATION SCREEN 2: Background & Ball Customization -->
+  <section id="screen-customize" class="init-screen">
+    <div class="modal-card ui-surface" data-surface>
+      <div class="modal-header">
+        <h2>Arena & Sphere Setup</h2>
+        <p>Step 2 of 2 — Choose sky cycle and sphere style</p>
+      </div>
+
+      <div class="custom-section">
+        <label class="section-title">Sky & Lighting Cycle</label>
+        <div class="option-row" id="bg-options">
+          <button class="option-pill ui-surface active" data-surface data-bg="day">
+            ☀️ Radiant Day
+          </button>
+          <button class="option-pill ui-surface" data-surface data-bg="night">
+            🌙 Starlight Night
+          </button>
+          <button class="option-pill ui-surface" data-surface data-bg="cycle">
+            🌅 Dynamic Cycle
+          </button>
+        </div>
+      </div>
+
+      <div class="custom-section">
+        <label class="section-title">Launcher Arsenal</label>
+        <div class="option-row" id="ball-options">
+          <button class="option-pill ui-surface active" data-surface data-ball="bubbles">
+            🫧 Iridescent Bubbles
+          </button>
+          <button class="option-pill ui-surface" data-surface data-ball="sports">
+            ⚽ Sports Balls (Football, Basketball, Cricket, Tennis, Volleyball)
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="back-to-device-btn" class="secondary-btn">← Device</button>
+        <button id="launch-game-btn" class="primary-btn">Launch Arena →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- IN-GAME HUD -->
+  <main id="game-hud" class="hidden">
+    <!-- Left Column Stack -->
+    <div class="hud-column left-column">
+      <!-- Panel 1: Score & Time -->
+      <div class="hud-panel ui-surface" data-surface id="panel-score">
+        <div class="panel-header">
+          <span>Session Metrics</span>
+          <button class="hide-panel-btn" data-target="panel-score" title="Hide Panel">×</button>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <small>SCORE</small>
+            <strong id="score-val">0</strong>
+          </div>
+          <div class="stat-item">
+            <small>TIME</small>
+            <strong id="time-val">00:00</strong>
+          </div>
+          <div class="stat-item">
+            <small>BEST SCORE</small>
+            <strong id="high-score-val">0</strong>
+          </div>
+          <div class="stat-item">
+            <small>BEST TIME</small>
+            <strong id="high-time-val">00:00</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 2: Velocities & Sky Cycle -->
+      <div class="hud-panel ui-surface" data-surface id="panel-physics">
+        <div class="panel-header">
+          <span>Chrono & Velocity</span>
+          <button class="hide-panel-btn" data-target="panel-physics" title="Hide Panel">×</button>
+        </div>
+        <div class="telemetry-list">
+          <div class="telemetry-row">
+            <span>Sky Speed (W / S)</span>
+            <strong id="cycle-speed-val">1.0x</strong>
+          </div>
+          <div class="telemetry-row">
+            <span>Ball Speed (A / D)</span>
+            <strong id="ball-speed-val">1.0x</strong>
+          </div>
+          <div class="telemetry-row">
+            <span>Sky Phase</span>
+            <strong id="sky-phase-val">Daylight</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column Stack -->
+    <div class="hud-column right-column">
+      <!-- Panel 3: Next Sphere Preview & Session Controls -->
+      <div class="hud-panel ui-surface" data-surface id="panel-arsenal">
+        <div class="panel-header">
+          <span>Queue & Command</span>
+          <button class="hide-panel-btn" data-target="panel-arsenal" title="Hide Panel">×</button>
+        </div>
+        <div class="arsenal-row">
+          <div class="queue-badge">
+            <span id="current-ball-dot" class="ball-dot"></span>
+            <small id="current-ball-name">Active</small>
+          </div>
+          <div class="queue-badge">
+            <span id="next-ball-dot" class="ball-dot"></span>
+            <small>Next</small>
+          </div>
+          <button id="pause-btn" class="pill-btn">Pause</button>
+        </div>
+      </div>
+
+      <!-- Panel 4: Companion Bird & Controls Guide -->
+      <div class="hud-panel ui-surface" data-surface id="panel-companion">
+        <div class="panel-header">
+          <span>Aerial Companion</span>
+          <button class="hide-panel-btn" data-target="panel-companion" title="Hide Panel">×</button>
+        </div>
+        <p class="companion-status">
+          Skybird patrols autonomously. Press <strong>↑</strong> to make it leap!
+        </p>
+      </div>
+    </div>
+
+    <!-- Device-Adaptive Control Deck -->
+    <div id="device-controls" class="device-controls ui-surface" data-surface>
+      <div class="panel-header compact-header">
+        <span id="device-deck-title">Controls</span>
+        <button class="hide-panel-btn" data-target="device-controls" title="Hide Controls">×</button>
+      </div>
+      <div class="control-buttons-row">
+        <button class="ctrl-btn" id="btn-cycle-up" title="Accelerate Sky Cycle (W)">W ☀️+</button>
+        <button class="ctrl-btn" id="btn-cycle-down" title="Decelerate Sky Cycle (S)">S 🌙-</button>
+        <button class="ctrl-btn" id="btn-ball-up" title="Accelerate Ball (A)">A ⚡+</button>
+        <button class="ctrl-btn" id="btn-ball-down" title="Decelerate Ball (D)">D 🐢-</button>
+        <button class="ctrl-btn accent" id="btn-bird-jump" title="Bird Jump (Up Arrow)">↑ Bird Jump</button>
+        <button class="ctrl-btn shoot" id="btn-fire" title="Launch Sphere">Fire</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- 3-SECOND COUNTDOWN OVERLAY -->
+  <div id="countdown-overlay" class="overlay-screen hidden">
+    <div class="countdown-bubble ui-surface" data-surface>
+      <span id="countdown-number">3</span>
+      <small id="countdown-subtext">Calibrating Arena...</small>
+    </div>
+  </div>
+
+  <!-- PAUSE MODAL -->
+  <div id="pause-modal" class="overlay-screen hidden">
+    <div class="modal-card compact-modal ui-surface" data-surface>
+      <h2>Game Paused</h2>
+      <p>Your current arena state, score, and timer are ready to be stored.</p>
+      <div class="pause-actions">
+        <button id="resume-game-btn" class="primary-btn">Resume (3s Timer)</button>
+        <button id="save-home-btn" class="secondary-btn">Save Progress & Leave to Home</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>
