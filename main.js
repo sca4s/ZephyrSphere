@@ -1,1873 +1,804 @@
-(() => {
-  /* =========================================================
-   * STATE & STORAGE MANAGEMENT
-   * ========================================================= */
-  const STORAGE_KEYS = {
-    HIGH_SCORE: 'zephyrsphere_high_score',
-    HIGH_TIME: 'zephyrsphere_high_time',
-    SAVED_SESSION: 'zephyrsphere_saved_session'
-  };
+/* Custom CSS Houdini Property for Upper-Left Blurred Radial Spread Transition */
+@property --plague-radius {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 150%;
+}
 
-  const BIOME_LIST = [
-    { id: 'royal_sanctum',     name: 'Royal Sanctum' },
-    { id: 'cyberpunk_drift',   name: 'Cyberpunk Drift' },
-    { id: 'angelic_cloud',     name: 'Angelic Cloud' },
-    { id: 'pastel_lagoon',     name: 'Pastel Lagoon' },
-    { id: 'lofi_cafe',         name: 'Lo-Fi Cafe' },
-    { id: 'gothic_balcony',    name: 'Gothic Balcony' },
-    { id: 'gothic_castle',     name: 'Gothic Castle' },
-    { id: 'enchanted_forest',  name: 'Enchanted Forest' },
-    { id: 'cyberpunk_terrace', name: 'Cyberpunk Terrace' },
-    { id: 'sandstone_desert',  name: 'Sandstone Desert' },
-    { id: 'abyssal_reef',      name: 'Abyssal Reef' },
-    { id: 'alpine_meadows',    name: 'Alpine Meadows' }
-  ];
+:root {
+  --ui-scale: 1;
+  --font-main: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
 
-  const state = {
-    device: 'desktop',          // 'desktop' | 'mobile'
-    biome: 'royal_sanctum',     // 1 of 12 interactive 3D biomes
-    bgMode: 'day',              // 'day' | 'night' | 'cycle'
-    ballMode: 'bubbles',        // 'bubbles' | 'sports'
-    theme: 'light',
-    score: 0,
-    elapsedSeconds: 0,
-    highScore: Number(localStorage.getItem(STORAGE_KEYS.HIGH_SCORE) || 0),
-    highTime: Number(localStorage.getItem(STORAGE_KEYS.HIGH_TIME) || 0),
-    cycleSpeed: 1.0,            // W / S keys
-    ballSpeedMultiplier: 1.0,   // A / D keys
-    skyTime: 0.25,              // 0..1
-    isRunning: false,
-    isPaused: false,
-    obstaclesReady: false,
-    aimAngle: 0,                // Horizontal angle in radians
-    aimElevation: 0.18,
-    currentTypeIndex: 0,
-    nextTypeIndex: 1,
-    hiddenPanels: new Set()
-  };
+  /* Light Theme Palette */
+  --surface-bg: rgba(255, 255, 255, 0.64);
+  --surface-border: rgba(255, 255, 255, 0.86);
+  --surface-shadow: 0 14px 34px rgba(104, 119, 158, 0.18), inset 0 1px 1px rgba(255, 255, 255, 0.94);
+  --text-primary: #243046;
+  --text-secondary: #5a6b8c;
+  --accent-grad: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+  --accent-strong: linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%);
+  --pill-bg: rgba(255, 255, 255, 0.72);
+}
 
-  const SPHERE_TYPES = [
-    { id: 'football',   label: 'Football',   bubbleLabel: 'Rose',   bubbleColor: '#ff7eb3', accent: '#ffffff' },
-    { id: 'basketball', label: 'Basketball', bubbleLabel: 'Amber',  bubbleColor: '#ffa85c', accent: '#2d2d2d' },
-    { id: 'cricket',    label: 'Cricket',    bubbleLabel: 'Ruby',   bubbleColor: '#ff5e62', accent: '#f8e7c1' },
-    { id: 'tennis',     label: 'Tennis',     bubbleLabel: 'Lime',   bubbleColor: '#a8ff78', accent: '#ffffff' },
-    { id: 'volleyball', label: 'Volleyball', bubbleLabel: 'Cyan',   bubbleColor: '#70e1f5', accent: '#ffd194' }
-  ];
+[data-theme="dark"] {
+  --surface-bg: rgba(26, 32, 54, 0.68);
+  --surface-border: rgba(182, 203, 255, 0.28);
+  --surface-shadow: 0 16px 38px rgba(6, 9, 20, 0.52), inset 0 1px 1px rgba(255, 255, 255, 0.22);
+  --text-primary: #eef3ff;
+  --text-secondary: #a5b6da;
+  --accent-grad: linear-gradient(135deg, #3b41c5 0%, #a981bb 55%, #ffc8a9 100%);
+  --accent-strong: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --pill-bg: rgba(42, 52, 84, 0.76);
+}
 
-  /* =========================================================
-   * DOM ELEMENTS
-   * ========================================================= */
-  const dom = {
-    screenDevice: document.getElementById('screen-device'),
-    screenCustomize: document.getElementById('screen-customize'),
-    savedBanner: document.getElementById('saved-game-banner'),
-    savedDetails: document.getElementById('saved-game-details'),
-    resumeSavedBtn: document.getElementById('resume-saved-btn'),
-    gameHud: document.getElementById('game-hud'),
-    unhideAllBtn: document.getElementById('unhide-all-btn'),
-    themeToggleBtn: document.getElementById('theme-toggle-btn'),
-    themeLabel: document.getElementById('theme-label'),
-    scoreVal: document.getElementById('score-val'),
-    timeVal: document.getElementById('time-val'),
-    highScoreVal: document.getElementById('high-score-val'),
-    highTimeVal: document.getElementById('high-time-val'),
-    cycleSpeedVal: document.getElementById('cycle-speed-val'),
-    ballSpeedVal: document.getElementById('ball-speed-val'),
-    skyPhaseVal: document.getElementById('sky-phase-val'),
-    currentBallDot: document.getElementById('current-ball-dot'),
-    currentBallName: document.getElementById('current-ball-name'),
-    nextBallDot: document.getElementById('next-ball-dot'),
-    nextBallName: document.getElementById('next-ball-name'),
-    activeBiomeLabel: document.getElementById('active-biome-label'),
-    aimSlider: document.getElementById('aim-slider'),
-    countdownOverlay: document.getElementById('countdown-overlay'),
-    countdownNumber: document.getElementById('countdown-number'),
-    countdownSubtext: document.getElementById('countdown-subtext'),
-    pauseModal: document.getElementById('pause-modal'),
-    pauseBiomeSelect: document.getElementById('pause-biome-select'),
-    gameoverModal: document.getElementById('gameover-modal'),
-    gameoverTitle: document.getElementById('gameover-title'),
-    gameoverMessage: document.getElementById('gameover-message'),
-    finalScoreVal: document.getElementById('final-score-val'),
-    finalTimeVal: document.getElementById('final-time-val'),
-    deviceDeckTitle: document.getElementById('device-deck-title')
-  };
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
 
-  function formatTime(sec) {
-    const m = Math.floor(sec / 60).toString().padStart(2, '0');
-    const s = Math.floor(sec % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-main);
+  color: var(--text-primary);
+  background: #d9e7ff;
+  touch-action: none;
+}
+
+#canvas-container {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1;
+  touch-action: none;
+}
+
+/* Frosted Translucent Surface + Individual Upper-Left Plague Spread Transition */
+.ui-surface {
+  position: relative;
+  background: var(--surface-bg);
+  backdrop-filter: blur(22px) saturate(185%);
+  -webkit-backdrop-filter: blur(22px) saturate(185%);
+  border: 1px solid var(--surface-border);
+  box-shadow: var(--surface-shadow);
+  border-radius: 22px;
+  color: var(--text-primary);
+  overflow: hidden;
+  transition:
+    transform 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.42s ease,
+    max-height 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+    margin 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+    padding 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+    border-width 0.48s ease;
+}
+
+/* Individual blurred upper-left spreading wave clone inserted dynamically during theme switch */
+.theme-spread-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 25;
+  --plague-radius: 0%;
+  -webkit-mask-image: radial-gradient(
+    circle at 0% 0%,
+    rgba(0, 0, 0, 1) calc(var(--plague-radius) - 28%),
+    rgba(0, 0, 0, 0.45) calc(var(--plague-radius) - 12%),
+    rgba(0, 0, 0, 0) var(--plague-radius)
+  );
+  mask-image: radial-gradient(
+    circle at 0% 0%,
+    rgba(0, 0, 0, 1) calc(var(--plague-radius) - 28%),
+    rgba(0, 0, 0, 0.45) calc(var(--plague-radius) - 12%),
+    rgba(0, 0, 0, 0) var(--plague-radius)
+  );
+  filter: blur(8px);
+  animation: spreadFromTopLeft 0.95s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes spreadFromTopLeft {
+  0% {
+    --plague-radius: 0%;
+    opacity: 0.95;
+  }
+  75% {
+    --plague-radius: 175%;
+    opacity: 0.85;
+  }
+  100% {
+    --plague-radius: 220%;
+    opacity: 0;
+  }
+}
+
+/* Top Utility Bar — Symmetrical height and spacing on both left and right */
+#top-utility-bar {
+  position: fixed;
+  top: 8px;
+  left: 12px;
+  right: 12px;
+  height: 38px;
+  z-index: 30;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+}
+
+.brand-badge,
+.top-equal-pill {
+  pointer-events: auto;
+  height: 36px;
+  min-width: 148px;
+  padding: 0 14px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.84rem;
+  letter-spacing: -0.01em;
+}
+
+.utility-actions {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pill-btn {
+  border: 1px solid var(--surface-border);
+  background: var(--pill-bg);
+  color: var(--text-primary);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.2s ease, background 0.25s ease;
+}
+
+.pill-btn:hover {
+  transform: translateY(-1px);
+}
+
+/* Initiation Screens */
+.init-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.96);
+  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.init-screen.active {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+.modal-card {
+  width: min(560px, 94vw);
+  max-height: 84vh;
+  overflow-y: auto;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wide-modal {
+  width: min(760px, 95vw);
+}
+
+.compact-modal {
+  width: min(400px, 92vw);
+  text-align: center;
+}
+
+.modal-header h1, .modal-header h2 {
+  font-size: 1.45rem;
+  letter-spacing: -0.03em;
+  margin-bottom: 4px;
+}
+
+.modal-header p {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+}
+
+/* Unified 2-Card Device Grid */
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.device-card {
+  padding: 20px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.device-card:hover {
+  transform: translateY(-3px);
+}
+
+.device-svg {
+  font-size: 2rem;
+}
+
+.device-card span {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.saved-banner {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 16px;
+}
+
+.saved-banner p {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.custom-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+.biome-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.biome-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  gap: 3px;
+  padding: 10px 12px !important;
+}
+
+.biome-pill small {
+  font-size: 0.68rem;
+  font-weight: 400;
+  opacity: 0.82;
+  line-height: 1.2;
+}
+
+.option-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.option-pill {
+  flex: 1 1 135px;
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-align: center;
+}
+
+.option-pill.active {
+  background: var(--accent-grad);
+  color: #1c2536;
+  border-color: rgba(255, 255, 255, 0.95);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* Pause & Gameover Actions — Uniform Full-Width Equal Sizing */
+.pause-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.equal-modal-btn {
+  width: 100% !important;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  flex: none !important;
+}
+
+.pause-scene-box {
+  background: var(--pill-bg);
+  padding: 12px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.scene-select {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  font-family: var(--font-main);
+  font-size: 0.84rem;
+  font-weight: 600;
+  outline: none;
+}
+
+.pause-sky-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.pause-sky-btn {
+  text-align: center;
+  padding: 7px 6px;
+  font-size: 0.76rem;
+}
+
+.pause-sky-btn.active {
+  background: var(--accent-grad);
+  color: #1c2536;
+  font-weight: 700;
+}
+
+.primary-btn, .secondary-btn {
+  padding: 11px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--surface-border);
+  font-weight: 700;
+  font-size: 0.86rem;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.primary-btn {
+  background: var(--accent-strong);
+  color: #fff;
+  flex: 1;
+}
+
+.secondary-btn {
+  background: var(--pill-bg);
+  color: var(--text-primary);
+}
+
+/* HUD Layout — Symmetrical Top Margin so Left & Right Panels are Equidistant from Top Bar */
+#game-hud {
+  position: fixed;
+  inset: 52px 12px 10px 12px;
+  z-index: 15;
+  pointer-events: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.hud-column {
+  display: flex;
+  flex-direction: column;
+  width: clamp(205px, 21vw, 265px);
+}
+
+.left-column {
+  transform-origin: top left;
+}
+
+.right-column {
+  transform-origin: top right;
+}
+
+.hud-panel {
+  pointer-events: auto;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+/* Equalize Session Metrics & Queue & Command Height */
+.top-sym-panel {
+  min-height: 122px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* Slide-out & Cascading Collapse Animation */
+.left-column .hud-panel.panel-hidden {
+  transform: translateX(-135%);
+  opacity: 0;
+  max-height: 0 !important;
+  min-height: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-width: 0 !important;
+  pointer-events: none;
+}
+
+.right-column .hud-panel.panel-hidden {
+  transform: translateX(135%);
+  opacity: 0;
+  max-height: 0 !important;
+  min-height: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-width: 0 !important;
+  pointer-events: none;
+}
+
+.device-controls.panel-hidden {
+  transform: translateX(-50%) translateY(150%) !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.compact-header {
+  margin-bottom: 4px;
+}
+
+.hide-panel-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--surface-border);
+  background: var(--pill-bg);
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.gameover-stats {
+  margin: 6px 0;
+}
+
+.stat-item {
+  background: var(--pill-bg);
+  padding: 5px 8px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-item small {
+  font-size: 0.58rem;
+  color: var(--text-secondary);
+}
+
+.stat-item strong {
+  font-size: 0.86rem;
+  margin-top: 1px;
+}
+
+.telemetry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.76rem;
+}
+
+.telemetry-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--pill-bg);
+  padding: 5px 8px;
+  border-radius: 10px;
+  gap: 6px;
+}
+
+/* Queue & Command Stack — Matches Session Metrics height cleanly */
+.arsenal-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.queue-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.queue-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--pill-bg);
+  padding: 5px 7px;
+  border-radius: 10px;
+  min-width: 0;
+}
+
+.queue-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.queue-label {
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+
+.queue-text strong {
+  font-size: 0.74rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ball-dot {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: inline-block;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+}
+
+.command-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.action-pill {
+  width: 100%;
+  text-align: center;
+  padding: 6px 6px;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.pause-pill {
+  background: var(--accent-grad);
+  color: #1c2536;
+}
+
+.biome-hud-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.companion-status {
+  font-size: 0.78rem;
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+
+/* Bottom Device Control Deck */
+.device-controls {
+  pointer-events: auto;
+  position: fixed;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  transform-origin: bottom center;
+  padding: 8px 12px;
+  border-radius: 20px;
+  width: min(500px, 95vw);
+}
+
+.touch-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  background: var(--pill-bg);
+  padding: 4px 10px;
+  border-radius: 10px;
+}
+
+.slider-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+#aim-slider {
+  flex: 1;
+  accent-color: #66a6ff;
+  height: 6px;
+  cursor: pointer;
+}
+
+.control-buttons-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+
+.ctrl-btn {
+  border: 1px solid var(--surface-border);
+  background: var(--pill-bg);
+  color: var(--text-primary);
+  padding: 7px 6px;
+  border-radius: 11px;
+  font-weight: 700;
+  font-size: 0.74rem;
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.ctrl-btn.accent {
+  background: var(--accent-grad);
+  color: #1f2a44;
+}
+
+.ctrl-btn.shoot {
+  background: var(--accent-strong);
+  color: #ffffff;
+}
+
+/* Overlays (Countdown, Pause & Game Over) */
+.overlay-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.28);
+  backdrop-filter: blur(6px);
+}
+
+.countdown-bubble {
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 16px;
+}
+
+#countdown-number {
+  font-size: 3.5rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+#countdown-subtext {
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Mobile & Portrait Layout — Symmetrical Top Cards that Never Overlap the Rink */
+@media (max-width: 820px) {
+  #top-utility-bar {
+    top: 6px;
+    left: 8px;
+    right: 8px;
+    height: 34px;
   }
 
-  function triggerHaptic(ms = 10) {
-    if (navigator.vibrate) {
-      try {
-        navigator.vibrate(ms);
-      } catch (_) {}
-    }
+  .brand-badge,
+  .top-equal-pill {
+    height: 32px;
+    min-width: 132px;
+    font-size: 0.78rem;
+    padding: 0 12px;
   }
 
-  /* =========================================================
-   * INDIVIDUAL UPPER-LEFT BLURRED PLAGUE THEME TRANSITION
-   * ========================================================= */
-  function triggerIndividualThemeTransition() {
-    const nextTheme = state.theme === 'light' ? 'dark' : 'light';
-    const surfaces = document.querySelectorAll('[data-surface]');
-
-    surfaces.forEach((surface, idx) => {
-      const overlay = document.createElement('div');
-      overlay.className = 'theme-spread-layer';
-      overlay.style.background =
-        nextTheme === 'dark'
-          ? 'linear-gradient(135deg, rgba(24,30,52,0.92), rgba(58,48,92,0.85))'
-          : 'linear-gradient(135deg, rgba(255,255,255,0.95), rgba(225,236,255,0.88))';
-      overlay.style.animationDelay = `${idx * 35}ms`;
-      surface.appendChild(overlay);
-
-      overlay.addEventListener('animationend', () => {
-        overlay.remove();
-      });
-    });
-
-    state.theme = nextTheme;
-    document.documentElement.setAttribute('data-theme', nextTheme);
-    dom.themeLabel.textContent = nextTheme === 'light' ? 'Dark Mode' : 'Light Mode';
+  #game-hud {
+    inset: 44px 8px 6px 8px;
   }
 
-  dom.themeToggleBtn.addEventListener('click', triggerIndividualThemeTransition);
-
-  /* =========================================================
-   * ADAPTIVE SCREEN RATIO, UI SCALING & CAMERA FRUSTUM FIT
-   * ========================================================= */
-  let scene, camera, renderer, sunLight, ambientLight, starsMesh;
-  let arenaGroup, biomeGroup, biomeAnimatedItems = [];
-  let gridBubbles = [], fallingSpheres = [], activeProjectile = null;
-  let cannonGroup, cannonBarrel, muzzleRingMesh, launcherMesh, nextPreviewMesh, trajectoryLine;
-
-  // True Rectangular Arena Bounds
-  const ARENA_BOUNDS = {
-    left: -5.8,
-    right: 5.8,
-    top: 6.8,
-    bottom: -4.2,
-    radius: 0.54
-  };
-
-  function calibrateScreenScaling() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    const aspect = w / h;
-
-    let baseScale = Math.min(w / 1360, h / 840);
-    if (w <= 820) {
-      baseScale = Math.max(0.88, Math.min(1.04, w / 410));
-      dom.deviceDeckTitle.textContent = 'Drag Arena to Aim • Double-Tap or Fire';
-    } else {
-      baseScale = Math.max(0.82, Math.min(1.22, baseScale));
-      dom.deviceDeckTitle.textContent =
-        state.device === 'mobile'
-          ? 'Drag Arena to Aim • Double-Tap or Fire'
-          : 'Desktop Command Bar (Mouse Aim • Click/Space Fire)';
-    }
-
-    document.documentElement.style.setProperty('--ui-scale', baseScale.toFixed(3));
-
-    // Fit entire rectangular rink between top HUD cards and bottom deck so ZERO overlap occurs
-    if (camera && renderer) {
-      camera.aspect = aspect;
-      const fovRad = THREE.MathUtils.degToRad(camera.fov);
-      const requiredWidth = (ARENA_BOUNDS.right - ARENA_BOUNDS.left) + (aspect < 1 ? 2.4 : 4.2);
-      const requiredHeight = (ARENA_BOUNDS.top - ARENA_BOUNDS.bottom) + (aspect < 1 ? 11.4 : 7.2);
-
-      const distForHeight = (requiredHeight / 2) / Math.tan(fovRad / 2);
-      const distForWidth = (requiredWidth / 2) / (Math.tan(fovRad / 2) * aspect);
-      const camZ = Math.max(distForHeight, distForWidth, 17.5);
-
-      // Shift camera centerY slightly higher on portrait so the rink sits lower, completely clear of top HUD
-      const centerY = aspect < 1 ? 1.85 : 1.35;
-      camera.position.set(0, centerY, camZ);
-      camera.lookAt(0, centerY, 0);
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
-    }
+  .hud-column {
+    width: calc(50vw - 12px);
+    max-width: 210px;
   }
 
-  window.addEventListener('resize', calibrateScreenScaling);
-
-  /* =========================================================
-   * INDIVIDUAL UI HIDE / CASCADING SLIDE & RESTORE ALL
-   * ========================================================= */
-  document.querySelectorAll('.hide-panel-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const targetId = btn.getAttribute('data-target');
-      const panel = document.getElementById(targetId);
-      if (panel) {
-        panel.classList.add('panel-hidden');
-        state.hiddenPanels.add(targetId);
-        dom.unhideAllBtn.classList.remove('hidden');
-      }
-    });
-  });
-
-  dom.unhideAllBtn.addEventListener('click', () => {
-    state.hiddenPanels.forEach((id) => {
-      const panel = document.getElementById(id);
-      if (panel) panel.classList.remove('panel-hidden');
-    });
-    state.hiddenPanels.clear();
-    dom.unhideAllBtn.classList.add('hidden');
-  });
-
-  /* =========================================================
-   * PROCEDURAL 3D TEXTURES FOR SPORTS BALLS & BUBBLES
-   * ========================================================= */
-  const sphereMaterials = {
-    bubbles: [],
-    sports: []
-  };
-
-  function createSportsTexture(typeId) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-
-    if (typeId === 'football') {
-      ctx.fillStyle = '#f8f9fa';
-      ctx.fillRect(0, 0, 256, 256);
-      ctx.fillStyle = '#1e272e';
-      const spots = [
-        [64, 64], [192, 64], [128, 128], [64, 192], [192, 192], [128, 32], [32, 128]
-      ];
-      spots.forEach(([x, y]) => {
-        ctx.beginPath();
-        for (let i = 0; i < 5; i++) {
-          const a = (i * 2 * Math.PI) / 5 - Math.PI / 2;
-          const px = x + Math.cos(a) * 26;
-          const py = y + Math.sin(a) * 26;
-          i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-        }
-        ctx.closePath();
-        ctx.fill();
-      });
-    } else if (typeId === 'basketball') {
-      ctx.fillStyle = '#e6672d';
-      ctx.fillRect(0, 0, 256, 256);
-      ctx.strokeStyle = '#1e1e1e';
-      ctx.lineWidth = 8;
-      ctx.beginPath();
-      ctx.moveTo(0, 128);
-      ctx.lineTo(256, 128);
-      ctx.moveTo(128, 0);
-      ctx.lineTo(128, 256);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(40, 128, 85, -Math.PI / 2, Math.PI / 2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(216, 128, 85, Math.PI / 2, -Math.PI / 2);
-      ctx.stroke();
-    } else if (typeId === 'cricket') {
-      ctx.fillStyle = '#b31b1b';
-      ctx.fillRect(0, 0, 256, 256);
-      ctx.strokeStyle = '#f5deb3';
-      ctx.lineWidth = 5;
-      ctx.setLineDash([8, 6]);
-      ctx.beginPath();
-      ctx.moveTo(0, 120);
-      ctx.lineTo(256, 120);
-      ctx.moveTo(0, 136);
-      ctx.lineTo(256, 136);
-      ctx.stroke();
-    } else if (typeId === 'tennis') {
-      ctx.fillStyle = '#c9f24b';
-      ctx.fillRect(0, 0, 256, 256);
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 10;
-      ctx.beginPath();
-      ctx.arc(64, 128, 72, -Math.PI / 2, Math.PI / 2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(192, 128, 72, Math.PI / 2, -Math.PI / 2);
-      ctx.stroke();
-    } else if (typeId === 'volleyball') {
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, 256, 256);
-      ctx.fillStyle = '#48dbfb';
-      ctx.fillRect(0, 0, 256, 85);
-      ctx.fillStyle = '#feca57';
-      ctx.fillRect(0, 170, 256, 86);
-      ctx.strokeStyle = '#2e86de';
-      ctx.lineWidth = 6;
-      for (let y = 0; y < 256; y += 42) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(256, y);
-        ctx.stroke();
-      }
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.needsUpdate = true;
-    return texture;
+  .hud-panel {
+    padding: 8px 9px;
+    margin-bottom: 6px;
+    border-radius: 16px;
   }
 
-  function initMaterials() {
-    SPHERE_TYPES.forEach((t) => {
-      sphereMaterials.bubbles.push(
-        new THREE.MeshPhysicalMaterial({
-          color: new THREE.Color(t.bubbleColor),
-          emissive: new THREE.Color(t.bubbleColor),
-          emissiveIntensity: 0.14,
-          transparent: true,
-          opacity: 0.9,
-          roughness: 0.08,
-          metalness: 0.1,
-          clearcoat: 1.0,
-          clearcoatRoughness: 0.05
-        })
-      );
-
-      sphereMaterials.sports.push(
-        new THREE.MeshStandardMaterial({
-          map: createSportsTexture(t.id),
-          roughness: 0.35,
-          metalness: 0.08
-        })
-      );
-    });
+  .top-sym-panel {
+    min-height: 112px;
   }
 
-  function getMaterialForType(typeIndex) {
-    return state.ballMode === 'bubbles'
-      ? sphereMaterials.bubbles[typeIndex]
-      : sphereMaterials.sports[typeIndex];
+  #panel-physics,
+  #panel-companion {
+    display: none;
   }
 
-  /* =========================================================
-   * 12 REALISTIC & ARCHITECTURAL 3D BIOMES BUILDER
-   * ========================================================= */
-  function syncActiveBiomeControls() {
-    const bInfo = BIOME_LIST.find((b) => b.id === state.biome) || BIOME_LIST[0];
-    if (dom.activeBiomeLabel) dom.activeBiomeLabel.textContent = bInfo.name;
-    if (dom.pauseBiomeSelect) dom.pauseBiomeSelect.value = state.biome;
-
-    document.querySelectorAll('#biome-options .biome-pill').forEach((btn) => {
-      btn.classList.toggle('active', btn.getAttribute('data-biome') === state.biome);
-    });
+  .control-buttons-row {
+    grid-template-columns: repeat(3, 1fr);
   }
 
-  function buildBiome3D(biomeId) {
-    if (!biomeGroup) {
-      biomeGroup = new THREE.Group();
-      scene.add(biomeGroup);
-    }
-    while (biomeGroup.children.length > 0) {
-      biomeGroup.remove(biomeGroup.children[0]);
-    }
-    biomeAnimatedItems = [];
-    syncActiveBiomeControls();
-
-    const zBack = -7.5;
-
-    if (biomeId === 'royal_sanctum') {
-      // Marble rotunda, velvet carpet inlay, golden rings, fluted pillars, and floating crown jewels
-      const rotunda = new THREE.Mesh(
-        new THREE.CylinderGeometry(16, 17.5, 1.6, 48),
-        new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.2, metalness: 0.1 })
-      );
-      rotunda.position.set(0, -6.2, zBack);
-      biomeGroup.add(rotunda);
-
-      const carpet = new THREE.Mesh(
-        new THREE.CylinderGeometry(11, 11, 1.66, 40),
-        new THREE.MeshStandardMaterial({ color: 0x9f1239, roughness: 0.65 })
-      );
-      carpet.position.set(0, -6.18, zBack);
-      biomeGroup.add(carpet);
-
-      const goldMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.85, roughness: 0.18 });
-      const trimRing = new THREE.Mesh(new THREE.TorusGeometry(11.1, 0.18, 16, 64), goldMat);
-      trimRing.rotation.x = Math.PI / 2;
-      trimRing.position.set(0, -5.35, zBack);
-      biomeGroup.add(trimRing);
-
-      for (let i = 0; i < 6; i++) {
-        const ang = (i / 5) * Math.PI - Math.PI;
-        const px = Math.cos(ang) * 13.5;
-        const pz = zBack + Math.sin(ang) * 4.5;
-        const pillar = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.65, 0.78, 15, 20),
-          new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.25 })
-        );
-        pillar.position.set(px, 1.4, pz);
-        biomeGroup.add(pillar);
-
-        const cap = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 1.8), goldMat);
-        cap.position.set(px, 8.9, pz);
-        biomeGroup.add(cap);
-      }
-
-      const celestialRing = new THREE.Mesh(new THREE.TorusGeometry(10.5, 0.2, 20, 80), goldMat);
-      celestialRing.position.set(0, 1.5, zBack - 3);
-      biomeGroup.add(celestialRing);
-      biomeAnimatedItems.push({ mesh: celestialRing, rotZ: 0.25, rotY: 0.15 });
-
-      for (let j = 0; j < 6; j++) {
-        const jewel = new THREE.Mesh(
-          new THREE.OctahedronGeometry(0.65, 0),
-          new THREE.MeshPhysicalMaterial({
-            color: j % 2 ? 0xf43f5e : 0x38bdf8,
-            emissive: j % 2 ? 0x881337 : 0x0369a1,
-            emissiveIntensity: 0.35,
-            roughness: 0.08,
-            clearcoat: 1
-          })
-        );
-        jewel.position.set((j - 2.5) * 4.6, 5.8 + (j % 2) * 1.4, zBack + 0.5);
-        biomeGroup.add(jewel);
-        biomeAnimatedItems.push({ mesh: jewel, rotY: 1.2, floatOffset: j, baseY: jewel.position.y });
-      }
-    } else if (biomeId === 'cyberpunk_drift') {
-      // Synthwave horizon, dual tilted neon drift rings, and holographic drift portals
-      const gridPlane = new THREE.GridHelper(52, 32, 0xff007f, 0x00f0ff);
-      gridPlane.position.set(0, -6.0, zBack);
-      biomeGroup.add(gridPlane);
-
-      const sunMat = new THREE.MeshBasicMaterial({ color: 0xff2a85 });
-      const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(7.2, 40), sunMat);
-      sunDisc.position.set(0, 3.2, zBack - 7);
-      biomeGroup.add(sunDisc);
-
-      const ring1 = new THREE.Mesh(
-        new THREE.TorusGeometry(9.2, 0.16, 16, 80),
-        new THREE.MeshBasicMaterial({ color: 0x00f0ff })
-      );
-      ring1.rotation.x = 0.58;
-      ring1.rotation.y = 0.32;
-      ring1.position.set(0, 1.5, zBack - 2);
-      biomeGroup.add(ring1);
-
-      const ring2 = new THREE.Mesh(
-        new THREE.TorusGeometry(11.0, 0.16, 16, 80),
-        new THREE.MeshBasicMaterial({ color: 0xff00a0 })
-      );
-      ring2.rotation.x = -0.52;
-      ring2.rotation.y = -0.32;
-      ring2.position.set(0, 1.5, zBack - 2);
-      biomeGroup.add(ring2);
-
-      biomeAnimatedItems.push({ mesh: ring1, rotZ: 0.75 });
-      biomeAnimatedItems.push({ mesh: ring2, rotZ: -0.6 });
-
-      [-10.5, 10.5].forEach((px, i) => {
-        const portal = new THREE.Mesh(
-          new THREE.TorusGeometry(2.1, 0.18, 16, 40),
-          new THREE.MeshBasicMaterial({ color: i === 0 ? 0x38bdf8 : 0xe879f9 })
-        );
-        portal.position.set(px, 1.2, zBack + 1);
-        portal.rotation.y = i === 0 ? 0.45 : -0.45;
-        biomeGroup.add(portal);
-        biomeAnimatedItems.push({ mesh: portal, rotZ: 1.4 });
-      });
-    } else if (biomeId === 'angelic_cloud') {
-      // Celestial cloud pillows, concentric golden halos, and pearl temple spires
-      const cloudMat = new THREE.MeshPhysicalMaterial({
-        color: 0xffffff,
-        roughness: 0.6,
-        clearcoat: 0.3
-      });
-      for (let i = 0; i < 16; i++) {
-        const puff = new THREE.Mesh(new THREE.SphereGeometry(1.8 + (i % 3) * 0.65, 24, 24), cloudMat);
-        puff.position.set((i - 7.5) * 2.1, -5.6 + Math.sin(i) * 0.6, zBack + (i % 2) * 1.2);
-        biomeGroup.add(puff);
-      }
-
-      const haloMat = new THREE.MeshStandardMaterial({
-        color: 0xfde047,
-        emissive: 0xfacc15,
-        emissiveIntensity: 0.45,
-        metalness: 0.8,
-        roughness: 0.2
-      });
-      [6.2, 8.8, 11.4].forEach((r, idx) => {
-        const halo = new THREE.Mesh(new THREE.TorusGeometry(r, 0.14, 16, 72), haloMat);
-        halo.position.set(0, 4.0, zBack - 3.5);
-        halo.rotation.x = Math.PI / 2.4;
-        biomeGroup.add(halo);
-        biomeAnimatedItems.push({ mesh: halo, rotZ: (idx + 1) * 0.22 });
-      });
-
-      [-11.5, -8.5, 8.5, 11.5].forEach((sx) => {
-        const spireBase = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.65, 0.85, 7, 16),
-          new THREE.MeshPhysicalMaterial({ color: 0xfef9c3, clearcoat: 1 })
-        );
-        spireBase.position.set(sx, -2.0, zBack - 1);
-        biomeGroup.add(spireBase);
-
-        const spireTop = new THREE.Mesh(
-          new THREE.ConeGeometry(0.85, 5.5, 16),
-          new THREE.MeshStandardMaterial({ color: 0xfde047, metalness: 0.6, roughness: 0.25 })
-        );
-        spireTop.position.set(sx, 4.2, zBack - 1);
-        biomeGroup.add(spireTop);
-      });
-    } else if (biomeId === 'pastel_lagoon') {
-      // Turquoise ocean lagoon, sandy island atoll, tropical palm trees, and pastel beach parasols
-      const ocean = new THREE.Mesh(
-        new THREE.CylinderGeometry(26, 26, 0.9, 40),
-        new THREE.MeshPhysicalMaterial({ color: 0x2dd4bf, roughness: 0.15, clearcoat: 0.8 })
-      );
-      ocean.position.set(0, -6.3, zBack);
-      biomeGroup.add(ocean);
-
-      const sand = new THREE.Mesh(
-        new THREE.CylinderGeometry(13, 15, 1.2, 36),
-        new THREE.MeshStandardMaterial({ color: 0xfde68a, roughness: 0.8 })
-      );
-      sand.position.set(0, -6.0, zBack);
-      biomeGroup.add(sand);
-
-      [-10.2, 10.2].forEach((tx) => {
-        const trunk = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.28, 0.48, 7.2, 12),
-          new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.8 })
-        );
-        trunk.position.set(tx, -2.2, zBack + 0.5);
-        biomeGroup.add(trunk);
-
-        for (let f = 0; f < 6; f++) {
-          const ang = (f / 6) * Math.PI * 2;
-          const frond = new THREE.Mesh(
-            new THREE.ConeGeometry(0.75, 3.1, 8),
-            new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.5 })
-          );
-          frond.position.set(tx + Math.cos(ang) * 1.35, 1.5, zBack + 0.5 + Math.sin(ang) * 1.35);
-          frond.rotation.z = Math.cos(ang) * 0.95;
-          biomeGroup.add(frond);
-        }
-      });
-
-      [-7.5, 7.5].forEach((px, i) => {
-        const pole = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.08, 0.08, 2.8, 8),
-          new THREE.MeshStandardMaterial({ color: 0xffffff })
-        );
-        pole.position.set(px, -4.4, zBack + 1.8);
-        biomeGroup.add(pole);
-
-        const parasol = new THREE.Mesh(
-          new THREE.ConeGeometry(2.0, 1.1, 16),
-          new THREE.MeshStandardMaterial({ color: i === 0 ? 0xf472b6 : 0xa78bfa, roughness: 0.4 })
-        );
-        parasol.position.set(px, -3.0, zBack + 1.8);
-        biomeGroup.add(parasol);
-        biomeAnimatedItems.push({ mesh: parasol, rotY: 0.45 });
-      });
-    } else if (biomeId === 'lofi_cafe') {
-      // Warm walnut tabletop, oversized steaming coffee mug with saucer, vinyl record turntable, overhead string lamps
-      const desk = new THREE.Mesh(
-        new THREE.BoxGeometry(38, 1.6, 18),
-        new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.5 })
-      );
-      desk.position.set(0, -6.4, zBack);
-      biomeGroup.add(desk);
-
-      const saucer = new THREE.Mesh(
-        new THREE.CylinderGeometry(2.5, 1.9, 0.32, 28),
-        new THREE.MeshPhysicalMaterial({ color: 0xfef3c7, clearcoat: 0.8 })
-      );
-      saucer.position.set(-10.2, -5.5, zBack + 1);
-      biomeGroup.add(saucer);
-
-      const mug = new THREE.Mesh(
-        new THREE.CylinderGeometry(1.65, 1.45, 3.3, 28),
-        new THREE.MeshPhysicalMaterial({ color: 0xd97706, clearcoat: 0.7 })
-      );
-      mug.position.set(-10.2, -3.7, zBack + 1);
-      biomeGroup.add(mug);
-
-      for (let s = 0; s < 3; s++) {
-        const steam = new THREE.Mesh(
-          new THREE.TorusGeometry(0.65 + s * 0.22, 0.08, 12, 24),
-          new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.42 })
-        );
-        steam.position.set(-10.2, -1.4 + s * 1.1, zBack + 1);
-        steam.rotation.x = Math.PI / 2;
-        biomeGroup.add(steam);
-        biomeAnimatedItems.push({ mesh: steam, floatOffset: s, baseY: steam.position.y });
-      }
-
-      const plinth = new THREE.Mesh(
-        new THREE.BoxGeometry(5.8, 0.6, 4.8),
-        new THREE.MeshStandardMaterial({ color: 0x78350f })
-      );
-      plinth.position.set(10.2, -5.3, zBack + 1.2);
-      biomeGroup.add(plinth);
-
-      const platter = new THREE.Mesh(
-        new THREE.CylinderGeometry(2.2, 2.2, 0.18, 32),
-        new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.18 })
-      );
-      platter.position.set(10.2, -4.9, zBack + 1.2);
-      biomeGroup.add(platter);
-      biomeAnimatedItems.push({ mesh: platter, rotY: 2.0 });
-
-      for (let l = -4; l <= 4; l++) {
-        const bulb = new THREE.Mesh(
-          new THREE.SphereGeometry(0.36, 14, 14),
-          new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xfacc15, emissiveIntensity: 0.9 })
-        );
-        bulb.position.set(l * 3.1, 8.8 - Math.cos(l * 0.4) * 0.55, zBack + 1);
-        biomeGroup.add(bulb);
-      }
-    } else if (biomeId === 'gothic_balcony') {
-      // Realistic Architectural Gothic Balcony: Carved stone balustrade with pillars, pointed lancet colonnade, multi-ring stained-glass rose window with tracery spokes, and twin cathedral spires
-      const stoneMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.72, metalness: 0.12 });
-      const darkStoneMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8, metalness: 0.15 });
-
-      // Balcony Floor Deck & Cornice
-      const balconyFloor = new THREE.Mesh(new THREE.BoxGeometry(34, 1.2, 8), darkStoneMat);
-      balconyFloor.position.set(0, -6.2, zBack + 1);
-      biomeGroup.add(balconyFloor);
-
-      // Bottom & Top Balustrade Rails
-      const bottomRail = new THREE.Mesh(new THREE.BoxGeometry(32, 0.45, 1.2), stoneMat);
-      bottomRail.position.set(0, -5.4, zBack + 2.2);
-      biomeGroup.add(bottomRail);
-
-      const topRail = new THREE.Mesh(new THREE.BoxGeometry(32, 0.45, 1.4), stoneMat);
-      topRail.position.set(0, -3.5, zBack + 2.2);
-      biomeGroup.add(topRail);
-
-      // Carved Baluster Pillars along the Balcony Rail
-      for (let bx = -14; bx <= 14; bx += 1.75) {
-        const baluster = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 1.6, 12), stoneMat);
-        baluster.position.set(bx, -4.45, zBack + 2.2);
-        biomeGroup.add(baluster);
-      }
-
-      // Flanking Pointed Lancet Arches & Ribbed Columns (Left & Right of Arena)
-      [-11.8, -8.4, 8.4, 11.8].forEach((colX, idx) => {
-        const column = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.62, 13.5, 16), stoneMat);
-        column.position.set(colX, 1.2, zBack - 0.5);
-        biomeGroup.add(column);
-
-        // Gothic Spire Finial atop each Column
-        const spire = new THREE.Mesh(new THREE.ConeGeometry(0.85, 5.2, 8), darkStoneMat);
-        spire.position.set(colX, 10.2, zBack - 0.5);
-        biomeGroup.add(spire);
-
-        // Warm Candle Sconce on Column
-        const sconce = new THREE.Mesh(
-          new THREE.SphereGeometry(0.28, 12, 12),
-          new THREE.MeshStandardMaterial({ color: 0xfde047, emissive: 0xf97316, emissiveIntensity: 0.95 })
-        );
-        sconce.position.set(colX, 2.5, zBack + 0.3);
-        biomeGroup.add(sconce);
-        biomeAnimatedItems.push({ mesh: sconce, floatOffset: idx, baseY: 2.5 });
-      });
-
-      // Pointed Gothic Archways spanning between outer columns
-      [-10.1, 10.1].forEach((archX) => {
-        const lancetArch = new THREE.Mesh(
-          new THREE.TorusGeometry(1.85, 0.28, 12, 24, Math.PI),
-          stoneMat
-        );
-        lancetArch.position.set(archX, 6.5, zBack - 0.5);
-        biomeGroup.add(lancetArch);
-      });
-
-      // Intricate Stained-Glass Rose Window Group (Positioned high & deep in cathedral wall)
-      const roseGroup = new THREE.Group();
-      roseGroup.position.set(0, 3.2, zBack - 4.5);
-      biomeGroup.add(roseGroup);
-
-      // Outer Stone Frame Ring
-      const outerStoneRing = new THREE.Mesh(new THREE.TorusGeometry(4.8, 0.42, 16, 48), darkStoneMat);
-      roseGroup.add(outerStoneRing);
-
-      const midStoneRing = new THREE.Mesh(new THREE.TorusGeometry(2.9, 0.24, 14, 40), stoneMat);
-      roseGroup.add(midStoneRing);
-
-      // 12 Radial Stone Tracery Spokes & Stained-Glass Petals
-      const petalColors = [0x38bdf8, 0xa855f7, 0xf43f5e, 0xfbbf24, 0x34d399, 0x60a5fa];
-      for (let k = 0; k < 12; k++) {
-        const ang = (k / 12) * Math.PI * 2;
-        const spoke = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 9.2, 8), stoneMat);
-        spoke.rotation.z = ang;
-        roseGroup.add(spoke);
-
-        const glassPetal = new THREE.Mesh(
-          new THREE.CircleGeometry(0.72, 12),
-          new THREE.MeshPhysicalMaterial({
-            color: petalColors[k % petalColors.length],
-            emissive: petalColors[k % petalColors.length],
-            emissiveIntensity: 0.35,
-            transparent: true,
-            opacity: 0.68,
-            side: THREE.DoubleSide
-          })
-        );
-        glassPetal.position.set(Math.cos(ang) * 3.8, Math.sin(ang) * 3.8, -0.05);
-        roseGroup.add(glassPetal);
-      }
-
-      biomeAnimatedItems.push({ mesh: roseGroup, rotZ: 0.12 });
-    } else if (biomeId === 'gothic_castle') {
-      // 4 crenelated corner turrets, curtain walls with battlements, and glowing torch braziers
-      const wall = new THREE.Mesh(
-        new THREE.BoxGeometry(26, 8.5, 1.8),
-        new THREE.MeshStandardMaterial({ color: 0x4b5563, roughness: 0.85 })
-      );
-      wall.position.set(0, -2.5, zBack - 3);
-      biomeGroup.add(wall);
-
-      [-11.5, -8.2, 8.2, 11.5].forEach((tx, idx) => {
-        const turret = new THREE.Mesh(
-          new THREE.CylinderGeometry(1.45, 1.65, 13.5, 16),
-          new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.8 })
-        );
-        turret.position.set(tx, 0, zBack - (idx % 2) * 2);
-        biomeGroup.add(turret);
-
-        const roof = new THREE.Mesh(
-          new THREE.ConeGeometry(1.75, 3.2, 16),
-          new THREE.MeshStandardMaterial({ color: 0x1e293b })
-        );
-        roof.position.set(tx, 8.2, zBack - (idx % 2) * 2);
-        biomeGroup.add(roof);
-
-        const flame = new THREE.Mesh(
-          new THREE.OctahedronGeometry(0.52, 1),
-          new THREE.MeshStandardMaterial({ color: 0xfde047, emissive: 0xf97316, emissiveIntensity: 0.95 })
-        );
-        flame.position.set(tx, 5.2, zBack + 0.5);
-        biomeGroup.add(flame);
-        biomeAnimatedItems.push({ mesh: flame, rotY: 2.4, floatOffset: idx, baseY: 5.2 });
-      });
-    } else if (biomeId === 'enchanted_forest') {
-      // Multi-tiered pine trees, winding stream, mossy boulders, and fireflies
-      const forestFloor = new THREE.Mesh(
-        new THREE.CylinderGeometry(26, 26, 1, 36),
-        new THREE.MeshStandardMaterial({ color: 0x064e3b, roughness: 0.9 })
-      );
-      forestFloor.position.set(0, -6.4, zBack);
-      biomeGroup.add(forestFloor);
-
-      const stream = new THREE.Mesh(
-        new THREE.BoxGeometry(7.5, 0.35, 22),
-        new THREE.MeshPhysicalMaterial({ color: 0x38bdf8, roughness: 0.15, clearcoat: 0.9 })
-      );
-      stream.position.set(0, -6.0, zBack);
-      biomeGroup.add(stream);
-
-      [-11.2, -8.5, 8.5, 11.2].forEach((px) => {
-        for (let t = 0; t < 3; t++) {
-          const cone = new THREE.Mesh(
-            new THREE.ConeGeometry(2.3 - t * 0.45, 3.8, 12),
-            new THREE.MeshStandardMaterial({ color: 0x047857, roughness: 0.75 })
-          );
-          cone.position.set(px, -3.0 + t * 2.3, zBack - 1);
-          biomeGroup.add(cone);
-        }
-      });
-
-      for (let f = 0; f < 18; f++) {
-        const fly = new THREE.Mesh(
-          new THREE.SphereGeometry(0.18, 10, 10),
-          new THREE.MeshBasicMaterial({ color: 0xd9f99d })
-        );
-        fly.position.set((Math.random() - 0.5) * 24, (Math.random() - 0.2) * 12, zBack + 1.5);
-        biomeGroup.add(fly);
-        biomeAnimatedItems.push({ mesh: fly, floatOffset: f, baseY: fly.position.y });
-      }
-    } else if (biomeId === 'cyberpunk_terrace') {
-      // Rooftop terrace deck, neon railings, and surrounding metropolis skyscrapers
-      const deck = new THREE.Mesh(
-        new THREE.BoxGeometry(32, 1.2, 14),
-        new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.35 })
-      );
-      deck.position.set(0, -6.2, zBack);
-      biomeGroup.add(deck);
-
-      const neonRail = new THREE.Mesh(
-        new THREE.BoxGeometry(28, 0.18, 0.18),
-        new THREE.MeshBasicMaterial({ color: 0x22d3ee })
-      );
-      neonRail.position.set(0, -4.5, zBack + 2);
-      biomeGroup.add(neonRail);
-
-      for (let b = -5; b <= 5; b++) {
-        if (Math.abs(b) < 2) continue;
-        const h = 11 + Math.abs(b * 1.9);
-        const tower = new THREE.Mesh(
-          new THREE.BoxGeometry(2.4, h, 2.4),
-          new THREE.MeshStandardMaterial({ color: 0x0f172a, emissive: 0x312e81, emissiveIntensity: 0.45 })
-        );
-        tower.position.set(b * 2.6, -6 + h / 2, zBack - 4);
-        biomeGroup.add(tower);
-      }
-    } else if (biomeId === 'sandstone_desert') {
-      // Ancient pyramid, layered red-rock canyon mesa, natural sandstone arch, oasis pool, and cacti
-      const sandFloor = new THREE.Mesh(
-        new THREE.CylinderGeometry(26, 26, 1.1, 36),
-        new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.85 })
-      );
-      sandFloor.position.set(0, -6.3, zBack);
-      biomeGroup.add(sandFloor);
-
-      const pyramid = new THREE.Mesh(
-        new THREE.ConeGeometry(7.0, 9.2, 4),
-        new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.75 })
-      );
-      pyramid.position.set(-9.2, -1.6, zBack - 3);
-      pyramid.rotation.y = Math.PI / 4;
-      biomeGroup.add(pyramid);
-
-      const arch = new THREE.Mesh(
-        new THREE.TorusGeometry(4.5, 0.9, 14, 28, Math.PI),
-        new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.8 })
-      );
-      arch.position.set(9.2, -5.5, zBack - 2);
-      biomeGroup.add(arch);
-
-      [-7.8, 8.2].forEach((cx) => {
-        const cactus = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.36, 0.42, 4.0, 12),
-          new THREE.MeshStandardMaterial({ color: 0x15803d })
-        );
-        cactus.position.set(cx, -4.1, zBack + 1.8);
-        biomeGroup.add(cactus);
-      });
-    } else if (biomeId === 'abyssal_reef') {
-      // Underwater coral clusters, seabed, and rising bubbles
-      const seabed = new THREE.Mesh(
-        new THREE.CylinderGeometry(26, 26, 1.2, 36),
-        new THREE.MeshStandardMaterial({ color: 0x0e7490, roughness: 0.7 })
-      );
-      seabed.position.set(0, -6.3, zBack);
-      biomeGroup.add(seabed);
-
-      [-10.2, -8.0, 8.0, 10.2].forEach((cx, i) => {
-        const coral = new THREE.Mesh(
-          new THREE.DodecahedronGeometry(1.75),
-          new THREE.MeshStandardMaterial({ color: i % 2 ? 0xf43f5e : 0xa855f7, roughness: 0.45 })
-        );
-        coral.position.set(cx, -4.7, zBack + 1);
-        biomeGroup.add(coral);
-      });
-
-      for (let b = 0; b < 16; b++) {
-        const bub = new THREE.Mesh(
-          new THREE.SphereGeometry(0.28 + (b % 3) * 0.12, 14, 14),
-          new THREE.MeshPhysicalMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.6, clearcoat: 1 })
-        );
-        bub.position.set((b - 7.5) * 1.8, -4 + (b % 5) * 2.2, zBack + 1.5);
-        biomeGroup.add(bub);
-        biomeAnimatedItems.push({ mesh: bub, floatOffset: b, baseY: bub.position.y });
-      }
-    } else if (biomeId === 'alpine_meadows') {
-      // Rolling green hills and snow-capped mountain range
-      [-8.5, 0, 8.5].forEach((hx, i) => {
-        const hill = new THREE.Mesh(
-          new THREE.SphereGeometry(9.0, 28, 20),
-          new THREE.MeshStandardMaterial({ color: i === 1 ? 0x22c55e : 0x16a34a, roughness: 0.8 })
-        );
-        hill.position.set(hx, -12.2, zBack + (i === 1 ? 1 : -1));
-        biomeGroup.add(hill);
-      });
-
-      [-10.5, -5.0, 5.0, 10.5].forEach((mx, i) => {
-        const mtn = new THREE.Mesh(
-          new THREE.ConeGeometry(4.8, 11.5 + (i % 2) * 2.5, 10),
-          new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.7 })
-        );
-        mtn.position.set(mx, -0.4, zBack - 4);
-        biomeGroup.add(mtn);
-
-        const cap = new THREE.Mesh(
-          new THREE.ConeGeometry(2.05, 4.4, 10),
-          new THREE.MeshStandardMaterial({ color: 0xffffff })
-        );
-        cap.position.set(mx, 3.6 + (i % 2) * 1.1, zBack - 4);
-        biomeGroup.add(cap);
-      });
-    }
+  .ctrl-btn {
+    padding: 7px 6px;
+    font-size: 0.76rem;
   }
-
-  /* =========================================================
-   * THREE.JS 3D SCENE, RECTANGULAR ARENA & VISIBLE CANNON BALL
-   * ========================================================= */
-  function initThreeScene() {
-    const container = document.getElementById('canvas-container');
-    scene = new THREE.Scene();
-
-    camera = new THREE.PerspectiveCamera(
-      50,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      250
-    );
-
-    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    container.appendChild(renderer.domElement);
-
-    ambientLight = new THREE.AmbientLight(0xffffff, 0.82);
-    scene.add(ambientLight);
-
-    sunLight = new THREE.DirectionalLight(0xfff4d6, 1.18);
-    sunLight.position.set(8, 14, 12);
-    sunLight.castShadow = true;
-    scene.add(sunLight);
-
-    initMaterials();
-    createStarfield();
-    createRectangularArenaFrame();
-    createLauncherAndTrajectory();
-    buildBiome3D(state.biome);
-    calibrateScreenScaling();
-  }
-
-  function createStarfield() {
-    const starGeo = new THREE.BufferGeometry();
-    const count = 350;
-    const positions = new Float32Array(count * 3);
-    for (let i = 0; i < count * 3; i += 3) {
-      positions[i] = (Math.random() - 0.5) * 75;
-      positions[i + 1] = (Math.random() - 0.3) * 55;
-      positions[i + 2] = -15 - Math.random() * 25;
-    }
-    starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const starMat = new THREE.PointsMaterial({
-      color: 0xffffff,
-      size: 0.22,
-      transparent: true,
-      opacity: 0
-    });
-    starsMesh = new THREE.Points(starGeo, starMat);
-    scene.add(starsMesh);
-  }
-
-  function createRectangularArenaFrame() {
-    arenaGroup = new THREE.Group();
-    scene.add(arenaGroup);
-
-    const railWidth = (ARENA_BOUNDS.right - ARENA_BOUNDS.left) + ARENA_BOUNDS.radius * 2;
-    const railHeight = (ARENA_BOUNDS.top - ARENA_BOUNDS.bottom) + ARENA_BOUNDS.radius * 2;
-    const centerY = (ARENA_BOUNDS.top + ARENA_BOUNDS.bottom) / 2;
-
-    const backplate = new THREE.Mesh(
-      new THREE.PlaneGeometry(railWidth, railHeight),
-      new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.05,
-        depthWrite: false,
-        side: THREE.DoubleSide
-      })
-    );
-    backplate.position.set(0, centerY, -0.45);
-    arenaGroup.add(backplate);
-
-    const railMat = new THREE.MeshPhysicalMaterial({
-      color: 0xe0f2fe,
-      transparent: true,
-      opacity: 0.85,
-      roughness: 0.15,
-      metalness: 0.2
-    });
-
-    const vRailGeo = new THREE.CylinderGeometry(0.14, 0.14, railHeight, 18);
-    const leftRail = new THREE.Mesh(vRailGeo, railMat);
-    leftRail.position.set(ARENA_BOUNDS.left - ARENA_BOUNDS.radius, centerY, 0);
-    arenaGroup.add(leftRail);
-
-    const rightRail = new THREE.Mesh(vRailGeo, railMat);
-    rightRail.position.set(ARENA_BOUNDS.right + ARENA_BOUNDS.radius, centerY, 0);
-    arenaGroup.add(rightRail);
-
-    const hRailGeo = new THREE.CylinderGeometry(0.14, 0.14, railWidth + 0.28, 18);
-    const topRail = new THREE.Mesh(hRailGeo, railMat);
-    topRail.rotation.z = Math.PI / 2;
-    topRail.position.set(0, ARENA_BOUNDS.top + ARENA_BOUNDS.radius, 0);
-    arenaGroup.add(topRail);
-
-    const dangerMat = new THREE.MeshBasicMaterial({
-      color: 0xf43f5e,
-      transparent: true,
-      opacity: 0.75
-    });
-    const bottomRail = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.08, 0.08, railWidth, 16),
-      dangerMat
-    );
-    bottomRail.rotation.z = Math.PI / 2;
-    bottomRail.position.set(0, ARENA_BOUNDS.bottom - ARENA_BOUNDS.radius * 0.3, 0);
-    arenaGroup.add(bottomRail);
-  }
-
-  function createLauncherAndTrajectory() {
-    cannonGroup = new THREE.Group();
-    cannonGroup.position.set(0, ARENA_BOUNDS.bottom, 0);
-    scene.add(cannonGroup);
-
-    // Sleek Pedestal Base
-    const baseMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.78, 1.08, 0.48, 24),
-      new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.7, roughness: 0.22 })
-    );
-    baseMesh.position.set(0, -0.32, 0);
-    cannonGroup.add(baseMesh);
-
-    // Secondary Next-Ball Preview Sphere sitting right beside the Cannon Base
-    const nextGeo = new THREE.SphereGeometry(ARENA_BOUNDS.radius * 0.62, 24, 24);
-    nextPreviewMesh = new THREE.Mesh(nextGeo, getMaterialForType(state.nextTypeIndex));
-    nextPreviewMesh.position.set(1.25, -0.15, 0.25);
-    cannonGroup.add(nextPreviewMesh);
-
-    // Rotating Cannon Cradle & Barrel Group
-    cannonBarrel = new THREE.Group();
-    cannonGroup.add(cannonBarrel);
-
-    const barrelTube = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.56, 0.68, 0.75, 24),
-      new THREE.MeshStandardMaterial({
-        color: 0x334155,
-        metalness: 0.6,
-        roughness: 0.25
-      })
-    );
-    barrelTube.position.set(0, 0.22, -0.08);
-    cannonBarrel.add(barrelTube);
-
-    // Glowing Color-Matched Muzzle Ring
-    muzzleRingMesh = new THREE.Mesh(
-      new THREE.TorusGeometry(0.58, 0.09, 14, 28),
-      new THREE.MeshBasicMaterial({ color: SPHERE_TYPES[state.currentTypeIndex].bubbleColor })
-    );
-    muzzleRingMesh.rotation.x = Math.PI / 2;
-    muzzleRingMesh.position.set(0, 0.62, 0);
-    cannonBarrel.add(muzzleRingMesh);
-
-    // Loaded Sphere Perched Prominently at the Top Muzzle so it is 100% Unobstructed & Visible
-    const baseGeo = new THREE.SphereGeometry(ARENA_BOUNDS.radius * 1.04, 32, 32);
-    launcherMesh = new THREE.Mesh(baseGeo, getMaterialForType(state.currentTypeIndex));
-    launcherMesh.position.set(0, 0.96, 0.22);
-    cannonBarrel.add(launcherMesh);
-
-    // Dashed Aiming Trajectory Line
-    const lineMat = new THREE.LineDashedMaterial({
-      color: 0xffffff,
-      dashSize: 0.36,
-      gapSize: 0.2,
-      linewidth: 2,
-      transparent: true,
-      opacity: 0.9
-    });
-    const points = [new THREE.Vector3(0, ARENA_BOUNDS.bottom, 0), new THREE.Vector3(0, 0, 0)];
-    const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
-    trajectoryLine = new THREE.Line(lineGeo, lineMat);
-    trajectoryLine.computeLineDistances();
-    scene.add(trajectoryLine);
-  }
-
-  /* =========================================================
-   * SWAP ACTIVE & NEXT BALL ONLY
-   * ========================================================= */
-  function swapCurrentAndNextBall() {
-    if (!state.isRunning || state.isPaused) return;
-    const temp = state.currentTypeIndex;
-    state.currentTypeIndex = state.nextTypeIndex;
-    state.nextTypeIndex = temp;
-    triggerHaptic(14);
-    syncArsenalUI();
-  }
-
-  /* =========================================================
-   * OBSTACLES / SPHERE GRID POPULATION (WITH 2-SECOND DELAY)
-   * ========================================================= */
-  function clearArenaSpheres() {
-    gridBubbles.forEach((b) => scene.remove(b.mesh));
-    gridBubbles = [];
-    fallingSpheres.forEach((f) => scene.remove(f.mesh));
-    fallingSpheres = [];
-    if (activeProjectile) {
-      scene.remove(activeProjectile.mesh);
-      activeProjectile = null;
-    }
-  }
-
-  function populateObstacleGrid(savedGrid = null) {
-    clearArenaSpheres();
-
-    if (savedGrid && savedGrid.length > 0) {
-      savedGrid.forEach((item) => {
-        spawnStaticSphere(item.x, item.y, item.typeIndex);
-      });
-      state.obstaclesReady = true;
-      return;
-    }
-
-    const rows = 5;
-    const cols = 10;
-    const spacingX = ARENA_BOUNDS.radius * 2.02;
-    const spacingY = ARENA_BOUNDS.radius * 1.8;
-
-    for (let r = 0; r < rows; r++) {
-      const rowOffset = (r % 2) * (spacingX * 0.5);
-      for (let c = 0; c < cols; c++) {
-        const x = ARENA_BOUNDS.left + 0.52 + c * spacingX + rowOffset;
-        if (x > ARENA_BOUNDS.right - 0.3) continue;
-        const y = ARENA_BOUNDS.top - r * spacingY;
-        const typeIndex = Math.floor(Math.random() * SPHERE_TYPES.length);
-        spawnStaticSphere(x, y, typeIndex);
-      }
-    }
-    state.obstaclesReady = true;
-  }
-
-  function spawnStaticSphere(x, y, typeIndex) {
-    const geo = new THREE.SphereGeometry(ARENA_BOUNDS.radius, 28, 28);
-    const mesh = new THREE.Mesh(geo, getMaterialForType(typeIndex));
-    mesh.position.set(x, y, 0);
-    scene.add(mesh);
-    gridBubbles.push({ mesh, x, y, typeIndex });
-  }
-
-  /* =========================================================
-   * TRAJECTORY RAY-BOUNCE PROJECTION & CANNON ROTATION
-   * ========================================================= */
-  function updateTrajectoryProjection() {
-    if (!trajectoryLine || !cannonBarrel) return;
-
-    cannonBarrel.rotation.z = -state.aimAngle;
-
-    const points = [];
-    let px = Math.sin(state.aimAngle) * 0.96;
-    let py = ARENA_BOUNDS.bottom + Math.cos(state.aimAngle) * 0.96;
-    let dx = Math.sin(state.aimAngle);
-    let dy = Math.cos(state.aimAngle);
-
-    points.push(new THREE.Vector3(px, py, 0));
-
-    const step = 0.25;
-    const maxSteps = 100;
-
-    for (let i = 0; i < maxSteps; i++) {
-      px += dx * step;
-      py += dy * step;
-
-      if (px <= ARENA_BOUNDS.left) {
-        px = ARENA_BOUNDS.left;
-        dx = -dx;
-        points.push(new THREE.Vector3(px, py, 0));
-      } else if (px >= ARENA_BOUNDS.right) {
-        px = ARENA_BOUNDS.right;
-        dx = -dx;
-        points.push(new THREE.Vector3(px, py, 0));
-      }
-
-      if (py >= ARENA_BOUNDS.top) {
-        py = ARENA_BOUNDS.top;
-        break;
-      }
-
-      let hit = false;
-      for (let j = 0; j < gridBubbles.length; j++) {
-        const b = gridBubbles[j];
-        const dist = Math.hypot(px - b.x, py - b.y);
-        if (dist <= ARENA_BOUNDS.radius * 1.95) {
-          hit = true;
-          break;
-        }
-      }
-      if (hit) break;
-    }
-
-    points.push(new THREE.Vector3(px, py, 0));
-    trajectoryLine.geometry.dispose();
-    trajectoryLine.geometry = new THREE.BufferGeometry().setFromPoints(points);
-    trajectoryLine.computeLineDistances();
-  }
-
-  /* =========================================================
-   * WIN / LOSE DETECTION & GAMEOVER MODAL
-   * ========================================================= */
-  function triggerGameOver(didWin) {
-    state.isRunning = false;
-    state.isPaused = true;
-    localStorage.removeItem(STORAGE_KEYS.SAVED_SESSION);
-    updateRecordsAndHUD();
-
-    dom.gameoverTitle.textContent = didWin ? '🎉 You Won!' : '💥 You Lost!';
-    dom.gameoverMessage.textContent = didWin
-      ? 'Incredible shot! You cleared every sphere in the arena!'
-      : 'The spheres piled up and reached the bottom cannon line!';
-    dom.finalScoreVal.textContent = state.score;
-    dom.finalTimeVal.textContent = formatTime(state.elapsedSeconds);
-    dom.gameoverModal.classList.remove('hidden');
-    triggerHaptic(didWin ? [30, 50, 40] : [60, 40, 80]);
-  }
-
-  function checkWinOrLoseCondition() {
-    if (gridBubbles.length === 0 && state.obstaclesReady) {
-      triggerGameOver(true);
-      return true;
-    }
-
-    const loseThresholdY = ARENA_BOUNDS.bottom + ARENA_BOUNDS.radius * 1.85;
-    for (let i = 0; i < gridBubbles.length; i++) {
-      if (gridBubbles[i].y <= loseThresholdY) {
-        triggerGameOver(false);
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /* =========================================================
-   * DETACHED FLOATING SPHERES GRAVITY AVALANCHE
-   * ========================================================= */
-  function dropDetachedSpheres() {
-    if (gridBubbles.length === 0) return;
-
-    const anchored = new Set();
-    const queue = [];
-    const topThreshold = ARENA_BOUNDS.top - ARENA_BOUNDS.radius * 0.95;
-
-    // 1. Seed BFS with all spheres touching the top ceiling row
-    for (let i = 0; i < gridBubbles.length; i++) {
-      if (gridBubbles[i].y >= topThreshold) {
-        anchored.add(gridBubbles[i]);
-        queue.push(gridBubbles[i]);
-      }
-    }
-
-    // 2. Traverse all spheres touching an anchored sphere
-    while (queue.length > 0) {
-      const curr = queue.shift();
-      for (let i = 0; i < gridBubbles.length; i++) {
-        const neighbor = gridBubbles[i];
-        if (!anchored.has(neighbor)) {
-          const d = Math.hypot(curr.x - neighbor.x, curr.y - neighbor.y);
-          if (d <= ARENA_BOUNDS.radius * 2.38) {
-            anchored.add(neighbor);
-            queue.push(neighbor);
-          }
-        }
-      }
-    }
-
-    // 3. Any sphere not connected to the ceiling immediately detaches and falls
-    const detached = gridBubbles.filter((b) => !anchored.has(b));
-    if (detached.length > 0) {
-      gridBubbles = gridBubbles.filter((b) => anchored.has(b));
-      detached.forEach((b) => {
-        fallingSpheres.push({
-          mesh: b.mesh,
-          x: b.x,
-          y: b.y,
-          vx: (Math.random() - 0.5) * 2.4,
-          vy: -2.5 - Math.random() * 2.0
-        });
-      });
-      state.score += detached.length * 35;
-      updateRecordsAndHUD();
-    }
-  }
-
-  /* =========================================================
-   * FIRING, COLLISION & CLUSTER MATCHING
-   * ========================================================= */
-  function fireSphere() {
-    if (!state.isRunning || state.isPaused || !state.obstaclesReady || activeProjectile) return;
-
-    triggerHaptic(18);
-    const baseSpeed = 14.5 * state.ballSpeedMultiplier;
-    const vx = Math.sin(state.aimAngle) * baseSpeed;
-    const vy = Math.cos(state.aimAngle) * baseSpeed;
-
-    const geo = new THREE.SphereGeometry(ARENA_BOUNDS.radius, 28, 28);
-    const mesh = new THREE.Mesh(geo, getMaterialForType(state.currentTypeIndex));
-    const startX = Math.sin(state.aimAngle) * 0.96;
-    const startY = ARENA_BOUNDS.bottom + Math.cos(state.aimAngle) * 0.96;
-    mesh.position.set(startX, startY, 0);
-    scene.add(mesh);
-
-    activeProjectile = {
-      mesh,
-      x: startX,
-      y: startY,
-      vx,
-      vy,
-      typeIndex: state.currentTypeIndex
-    };
-
-    state.currentTypeIndex = state.nextTypeIndex;
-    state.nextTypeIndex = Math.floor(Math.random() * SPHERE_TYPES.length);
-    syncArsenalUI();
-  }
-
-  function settleProjectile() {
-    if (!activeProjectile) return;
-    const { mesh, x, y, typeIndex } = activeProjectile;
-    const newEntry = { mesh, x, y, typeIndex };
-    gridBubbles.push(newEntry);
-    activeProjectile = null;
-
-    // BFS cluster matching (pop 3 or more of same type)
-    const cluster = [newEntry];
-    const visited = new Set([newEntry]);
-    const queue = [newEntry];
-
-    while (queue.length > 0) {
-      const curr = queue.shift();
-      for (const other of gridBubbles) {
-        if (!visited.has(other) && other.typeIndex === typeIndex) {
-          const d = Math.hypot(curr.x - other.x, curr.y - other.y);
-          if (d <= ARENA_BOUNDS.radius * 2.35) {
-            visited.add(other);
-            cluster.push(other);
-            queue.push(other);
-          }
-        }
-      }
-    }
-
-    if (cluster.length >= 3) {
-      cluster.forEach((b) => {
-        scene.remove(b.mesh);
-      });
-      gridBubbles = gridBubbles.filter((b) => !visited.has(b));
-      state.score += cluster.length * 25;
-      triggerHaptic(25);
-
-      // Immediately drop any lower-level balls that lost their upper support!
-      dropDetachedSpheres();
-      updateRecordsAndHUD();
-    }
-
-    checkWinOrLoseCondition();
-  }
-
-  /* =========================================================
-   * SKY CYCLE (DAY / NIGHT / ACCELERATION WITH W & S)
-   * ========================================================= */
-  const dayColor = new THREE.Color('#bde0fe');
-  const duskColor = new THREE.Color('#fbcfe8');
-  const nightColor = new THREE.Color('#0f172a');
-
-  function syncSkyButtonsUI() {
-    document.querySelectorAll('#bg-options .option-pill').forEach((b) => {
-      b.classList.toggle('active', b.getAttribute('data-bg') === state.bgMode);
-    });
-    document.querySelectorAll('#pause-sky-options .pause-sky-btn').forEach((b) => {
-      b.classList.toggle('active', b.getAttribute('data-bg') === state.bgMode);
-    });
-  }
-
-  function updateSkyLighting(dt) {
-    if (state.bgMode === 'day') {
-      state.skyTime += dt * 0.015 * state.cycleSpeed;
-    } else if (state.bgMode === 'night') {
-      state.skyTime += dt * 0.015 * state.cycleSpeed;
-    } else {
-      state.skyTime = (state.skyTime + dt * 0.045 * state.cycleSpeed) % 1;
-    }
-
-    let phaseFactor = (Math.sin(state.skyTime * Math.PI * 2) + 1) / 2;
-    if (state.bgMode === 'day') phaseFactor = 0.78 + 0.22 * phaseFactor;
-    if (state.bgMode === 'night') phaseFactor = 0.2 * phaseFactor;
-
-    const currentBg = new THREE.Color();
-    if (phaseFactor > 0.5) {
-      currentBg.lerpColors(duskColor, dayColor, (phaseFactor - 0.5) * 2);
-      dom.skyPhaseVal.textContent = 'Radiant Day';
-    } else {
-      currentBg.lerpColors(nightColor, duskColor, phaseFactor * 2);
-      dom.skyPhaseVal.textContent = 'Starlight Night';
-    }
-
-    scene.background = currentBg;
-    sunLight.intensity = 0.4 + phaseFactor * 0.95;
-    sunLight.position.x = Math.cos(state.skyTime * Math.PI * 2) * 14;
-    sunLight.position.y = Math.sin(state.skyTime * Math.PI * 2) * 14 + 4;
-    starsMesh.material.opacity = Math.max(0, 1 - phaseFactor * 1.6);
-  }
-
-  /* =========================================================
-   * HUD & HIGH SCORE / HIGH TIME PERSISTENCE
-   * ========================================================= */
-  function syncArsenalUI() {
-    const curr = SPHERE_TYPES[state.currentTypeIndex];
-    const next = SPHERE_TYPES[state.nextTypeIndex];
-
-    dom.currentBallDot.style.background = curr.bubbleColor;
-    dom.currentBallName.textContent =
-      state.ballMode === 'bubbles' ? curr.bubbleLabel : curr.label;
-
-    dom.nextBallDot.style.background = next.bubbleColor;
-    dom.nextBallName.textContent =
-      state.ballMode === 'bubbles' ? next.bubbleLabel : next.label;
-
-    if (launcherMesh) {
-      launcherMesh.material = getMaterialForType(state.currentTypeIndex);
-    }
-    if (muzzleRingMesh) {
-      muzzleRingMesh.material.color.set(curr.bubbleColor);
-    }
-    if (nextPreviewMesh) {
-      nextPreviewMesh.material = getMaterialForType(state.nextTypeIndex);
-    }
-    if (trajectoryLine) {
-      trajectoryLine.material.color.set(curr.bubbleColor);
-    }
-    gridBubbles.forEach((b) => {
-      b.mesh.material = getMaterialForType(b.typeIndex);
-    });
-  }
-
-  function updateRecordsAndHUD() {
-    if (state.score > state.highScore) {
-      state.highScore = state.score;
-      localStorage.setItem(STORAGE_KEYS.HIGH_SCORE, String(state.highScore));
-    }
-    if (Math.floor(state.elapsedSeconds) > state.highTime) {
-      state.highTime = Math.floor(state.elapsedSeconds);
-      localStorage.setItem(STORAGE_KEYS.HIGH_TIME, String(state.highTime));
-    }
-
-    dom.scoreVal.textContent = state.score;
-    dom.timeVal.textContent = formatTime(state.elapsedSeconds);
-    dom.highScoreVal.textContent = state.highScore;
-    dom.highTimeVal.textContent = formatTime(state.highTime);
-    dom.cycleSpeedVal.textContent = `${state.cycleSpeed.toFixed(1)}x`;
-    dom.ballSpeedVal.textContent = `${state.ballSpeedMultiplier.toFixed(1)}x`;
-  }
-
-  /* =========================================================
-   * 3-SECOND COUNTDOWN & 2-SECOND OBSTACLE DELAY
-   * ========================================================= */
-  function runThreeSecondCountdown(subtext, onComplete) {
-    state.isPaused = true;
-    dom.countdownOverlay.classList.remove('hidden');
-    let remaining = 3;
-    dom.countdownNumber.textContent = remaining;
-    dom.countdownSubtext.textContent = subtext;
-
-    const interval = setInterval(() => {
-      remaining -= 1;
-      if (remaining > 0) {
-        dom.countdownNumber.textContent = remaining;
-      } else {
-        clearInterval(interval);
-        dom.countdownOverlay.classList.add('hidden');
-        state.isPaused = false;
-        if (onComplete) onComplete();
-      }
-    }, 1000);
-  }
-
-  function startNewOrSavedSession(savedData = null) {
-    dom.screenDevice.classList.remove('active');
-    dom.screenCustomize.classList.remove('active');
-    dom.gameoverModal.classList.add('hidden');
-    dom.pauseModal.classList.add('hidden');
-    dom.gameHud.classList.remove('hidden');
-
-    calibrateScreenScaling();
-    state.isRunning = true;
-    state.obstaclesReady = false;
-    clearArenaSpheres();
-
-    if (savedData) {
-      state.score = savedData.score || 0;
-      state.elapsedSeconds = savedData.elapsedSeconds || 0;
-      state.device = savedData.device || state.device;
-      state.biome = savedData.biome || state.biome;
-      state.bgMode = savedData.bgMode || state.bgMode;
-      state.ballMode = savedData.ballMode || state.ballMode;
-    } else {
-      state.score = 0;
-      state.elapsedSeconds = 0;
-    }
-
-    buildBiome3D(state.biome);
-    syncSkyButtonsUI();
-    syncArsenalUI();
-    updateRecordsAndHUD();
-
-    // 3-Second Countdown before starting the game
-    runThreeSecondCountdown('Arena Starting in 3 Seconds...', () => {
-      // 2-Second Delay before obstacles appear on initiation
-      setTimeout(() => {
-        if (state.isRunning) {
-          populateObstacleGrid(savedData ? savedData.grid : null);
-        }
-      }, 2000);
-    });
-  }
-
-  /* =========================================================
-   * INPUT CONTROLS (KEYBOARD + DRAG-TO-AIM + DOUBLE-TAP FIRE)
-   * ========================================================= */
-  function setAimAngleFromNormalized(nx) {
-    state.aimAngle = Math.max(-1.18, Math.min(1.18, nx * 1.15));
-    if (dom.aimSlider) {
-      dom.aimSlider.value = String(Math.round(state.aimAngle * 100));
-    }
-  }
-
-  window.addEventListener('keydown', (e) => {
-    const key = e.key.toLowerCase();
-    if (key === 'w') {
-      state.cycleSpeed = Math.min(5.0, state.cycleSpeed + 0.25);
-      updateRecordsAndHUD();
-    } else if (key === 's') {
-      state.cycleSpeed = Math.max(0.2, state.cycleSpeed - 0.25);
-      updateRecordsAndHUD();
-    } else if (key === 'a') {
-      state.ballSpeedMultiplier = Math.min(3.0, state.ballSpeedMultiplier + 0.2);
-      updateRecordsAndHUD();
-    } else if (key === 'd') {
-      state.ballSpeedMultiplier = Math.max(0.4, state.ballSpeedMultiplier - 0.2);
-      updateRecordsAndHUD();
-    } else if (key === 'c' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      swapCurrentAndNextBall();
-    } else if (e.key === 'ArrowLeft') {
-      setAimAngleFromNormalized((state.aimAngle - 0.08) / 1.15);
-    } else if (e.key === 'ArrowRight') {
-      setAimAngleFromNormalized((state.aimAngle + 0.08) / 1.15);
-    } else if (e.key === ' ') {
-      fireSphere();
-    }
-  });
-
-  // Touch Drag-to-Aim + Double-Tap-to-Fire (Desktop Mouse Click also Fires)
-  const canvasContainer = document.getElementById('canvas-container');
-  let isPointerDragging = false;
-  let lastHapticTick = 0;
-  let lastTouchTapTime = 0;
-
-  canvasContainer.addEventListener('pointerdown', (e) => {
-    isPointerDragging = true;
-    const nx = (e.clientX / window.innerWidth) * 2 - 1;
-    setAimAngleFromNormalized(nx);
-
-    if (e.pointerType === 'mouse') {
-      fireSphere();
-    } else {
-      const now = performance.now();
-      if (now - lastTouchTapTime < 320) {
-        // Double-Tap on Touch Screen disperses/fires the ball!
-        fireSphere();
-        lastTouchTapTime = 0;
-      } else {
-        lastTouchTapTime = now;
-        triggerHaptic(6);
-      }
-    }
-  });
-
-  canvasContainer.addEventListener('pointermove', (e) => {
-    if (e.pointerType === 'mouse' || isPointerDragging) {
-      const nx = (e.clientX / window.innerWidth) * 2 - 1;
-      setAimAngleFromNormalized(nx);
-      const now = performance.now();
-      if (isPointerDragging && e.pointerType !== 'mouse' && now - lastHapticTick > 90) {
-        triggerHaptic(5);
-        lastHapticTick = now;
-      }
-    }
-  });
-
-  window.addEventListener('pointerup', () => {
-    isPointerDragging = false;
-  });
-
-  // Dedicated Haptic Touch Range Slider
-  if (dom.aimSlider) {
-    dom.aimSlider.addEventListener('input', (e) => {
-      state.aimAngle = Number(e.target.value) / 100;
-      const now = performance.now();
-      if (now - lastHapticTick > 80) {
-        triggerHaptic(6);
-        lastHapticTick = now;
-      }
-    });
-  }
-
-  // On-Screen Device & HUD Buttons
-  document.getElementById('btn-cycle-up').addEventListener('click', () => {
-    state.cycleSpeed = Math.min(5.0, state.cycleSpeed + 0.25);
-    updateRecordsAndHUD();
-  });
-  document.getElementById('btn-cycle-down').addEventListener('click', () => {
-    state.cycleSpeed = Math.max(0.2, state.cycleSpeed - 0.25);
-    updateRecordsAndHUD();
-  });
-  document.getElementById('btn-ball-up').addEventListener('click', () => {
-    state.ballSpeedMultiplier = Math.min(3.0, state.ballSpeedMultiplier + 0.2);
-    updateRecordsAndHUD();
-  });
-  document.getElementById('btn-ball-down').addEventListener('click', () => {
-    state.ballSpeedMultiplier = Math.max(0.4, state.ballSpeedMultiplier - 0.2);
-    updateRecordsAndHUD();
-  });
-  document.getElementById('btn-bird-jump').addEventListener('click', swapCurrentAndNextBall);
-  document.getElementById('swap-ball-btn').addEventListener('click', swapCurrentAndNextBall);
-  document.getElementById('btn-fire').addEventListener('click', fireSphere);
-
-  document.getElementById('cycle-biome-btn').addEventListener('click', () => {
-    const idx = BIOME_LIST.findIndex((b) => b.id === state.biome);
-    const nextBiome = BIOME_LIST[(idx + 1) % BIOME_LIST.length];
-    state.biome = nextBiome.id;
-    buildBiome3D(state.biome);
-  });
-
-  /* =========================================================
-   * INITIATION SCREENS, PAUSE MENU SCENE SWITCHER & REMATCH
-   * ========================================================= */
-  function checkSavedSessionBanner() {
-    const raw = localStorage.getItem(STORAGE_KEYS.SAVED_SESSION);
-    if (!raw) {
-      dom.savedBanner.classList.add('hidden');
-      return;
-    }
-    try {
-      const data = JSON.parse(raw);
-      dom.savedDetails.textContent = `Score: ${data.score} | Time: ${formatTime(data.elapsedSeconds)}`;
-      dom.savedBanner.classList.remove('hidden');
-    } catch {
-      dom.savedBanner.classList.add('hidden');
-    }
-  }
-
-  // Screen 1: Device Selection
-  document.querySelectorAll('.device-card').forEach((card) => {
-    card.addEventListener('click', () => {
-      state.device = card.getAttribute('data-device');
-      calibrateScreenScaling();
-      dom.screenDevice.classList.remove('active');
-      dom.screenCustomize.classList.add('active');
-    });
-  });
-
-  dom.resumeSavedBtn.addEventListener('click', () => {
-    const raw = localStorage.getItem(STORAGE_KEYS.SAVED_SESSION);
-    if (raw) {
-      startNewOrSavedSession(JSON.parse(raw));
-    }
-  });
-
-  // Screen 2: 12 Interactive Biomes, Background & Ball Options
-  document.querySelectorAll('#biome-options .biome-pill').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.biome = btn.getAttribute('data-biome');
-      buildBiome3D(state.biome);
-    });
-  });
-
-  document.querySelectorAll('#bg-options .option-pill').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.bgMode = btn.getAttribute('data-bg');
-      syncSkyButtonsUI();
-    });
-  });
-
-  document.querySelectorAll('#ball-options .option-pill').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#ball-options .option-pill').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      state.ballMode = btn.getAttribute('data-ball');
-      syncArsenalUI();
-    });
-  });
-
-  document.getElementById('back-to-device-btn').addEventListener('click', () => {
-    dom.screenCustomize.classList.remove('active');
-    dom.screenDevice.classList.add('active');
-  });
-
-  document.getElementById('launch-game-btn').addEventListener('click', () => {
-    localStorage.removeItem(STORAGE_KEYS.SAVED_SESSION);
-    startNewOrSavedSession(null);
-  });
-
-  // Pause Modal: Live Scene & Sky Switching
-  if (dom.pauseBiomeSelect) {
-    dom.pauseBiomeSelect.addEventListener('change', (e) => {
-      state.biome = e.target.value;
-      buildBiome3D(state.biome);
-    });
-  }
-
-  document.querySelectorAll('#pause-sky-options .pause-sky-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.bgMode = btn.getAttribute('data-bg');
-      syncSkyButtonsUI();
-    });
-  });
-
-  document.getElementById('pause-btn').addEventListener('click', () => {
-    if (!state.isRunning || state.isPaused) return;
-    state.isPaused = true;
-    syncActiveBiomeControls();
-    syncSkyButtonsUI();
-    dom.pauseModal.classList.remove('hidden');
-  });
-
-  document.getElementById('resume-game-btn').addEventListener('click', () => {
-    dom.pauseModal.classList.add('hidden');
-    runThreeSecondCountdown('Resuming Session...', null);
-  });
-
-  document.getElementById('save-home-btn').addEventListener('click', () => {
-    const serializedGrid = gridBubbles.map((b) => ({
-      x: b.x,
-      y: b.y,
-      typeIndex: b.typeIndex
-    }));
-
-    const payload = {
-      score: state.score,
-      elapsedSeconds: state.elapsedSeconds,
-      device: state.device,
-      biome: state.biome,
-      bgMode: state.bgMode,
-      ballMode: state.ballMode,
-      grid: serializedGrid
-    };
-
-    localStorage.setItem(STORAGE_KEYS.SAVED_SESSION, JSON.stringify(payload));
-    updateRecordsAndHUD();
-
-    dom.pauseModal.classList.add('hidden');
-    dom.gameHud.classList.add('hidden');
-    state.isRunning = false;
-    state.isPaused = false;
-    checkSavedSessionBanner();
-    dom.screenDevice.classList.add('active');
-  });
-
-  // Rematch & Return to Homescreen from Win/Lose Modal
-  document.getElementById('rematch-btn').addEventListener('click', () => {
-    dom.gameoverModal.classList.add('hidden');
-    startNewOrSavedSession(null);
-  });
-
-  document.getElementById('gameover-home-btn').addEventListener('click', () => {
-    dom.gameoverModal.classList.add('hidden');
-    dom.gameHud.classList.add('hidden');
-    clearArenaSpheres();
-    state.isRunning = false;
-    state.isPaused = false;
-    checkSavedSessionBanner();
-    dom.screenDevice.classList.add('active');
-  });
-
-  /* =========================================================
-   * MAIN ANIMATION LOOP
-   * ========================================================= */
-  let lastTime = performance.now();
-
-  function animate(now) {
-    requestAnimationFrame(animate);
-    const dt = Math.min(0.05, (now - lastTime) / 1000);
-    lastTime = now;
-
-    updateSkyLighting(dt);
-    updateTrajectoryProjection();
-
-    // Rotate Loaded Cannon Sphere & Next Preview gently so Sports Textures are unmistakable
-    if (launcherMesh) {
-      launcherMesh.rotation.y += 1.4 * dt;
-    }
-    if (nextPreviewMesh) {
-      nextPreviewMesh.rotation.y -= 1.2 * dt;
-    }
-
-    // Animate Interactive 3D Biome Elements
-    for (let i = 0; i < biomeAnimatedItems.length; i++) {
-      const item = biomeAnimatedItems[i];
-      if (item.rotY) item.mesh.rotation.y += item.rotY * dt;
-      if (item.rotZ) item.mesh.rotation.z += item.rotZ * dt;
-      if (item.floatOffset !== undefined) {
-        item.mesh.position.y = item.baseY + Math.sin(now * 0.0025 + item.floatOffset) * 0.45;
-      }
-    }
-
-    // Animate Detached Falling Spheres (Gravity Avalanche)
-    for (let i = fallingSpheres.length - 1; i >= 0; i--) {
-      const f = fallingSpheres[i];
-      f.vy -= 26.0 * dt;
-      f.x += f.vx * dt;
-      f.y += f.vy * dt;
-      f.mesh.position.set(f.x, f.y, 0.25);
-      f.mesh.rotation.x += 6 * dt;
-      f.mesh.rotation.z += 5 * dt;
-
-      if (f.y < ARENA_BOUNDS.bottom - 5.0) {
-        scene.remove(f.mesh);
-        fallingSpheres.splice(i, 1);
-      }
-    }
-
-    if (state.isRunning && !state.isPaused) {
-      state.elapsedSeconds += dt;
-      updateRecordsAndHUD();
-
-      if (activeProjectile) {
-        activeProjectile.x += activeProjectile.vx * dt;
-        activeProjectile.y += activeProjectile.vy * dt;
-
-        // Bounce off left & right rectangular walls
-        if (activeProjectile.x <= ARENA_BOUNDS.left) {
-          activeProjectile.x = ARENA_BOUNDS.left;
-          activeProjectile.vx = Math.abs(activeProjectile.vx);
-        } else if (activeProjectile.x >= ARENA_BOUNDS.right) {
-          activeProjectile.x = ARENA_BOUNDS.right;
-          activeProjectile.vx = -Math.abs(activeProjectile.vx);
-        }
-
-        activeProjectile.mesh.position.set(activeProjectile.x, activeProjectile.y, 0);
-        activeProjectile.mesh.rotation.x += 5 * dt;
-        activeProjectile.mesh.rotation.y += 5 * dt;
-
-        // Check ceiling or sphere collision
-        if (activeProjectile.y >= ARENA_BOUNDS.top) {
-          activeProjectile.y = ARENA_BOUNDS.top;
-          activeProjectile.mesh.position.y = activeProjectile.y;
-          settleProjectile();
-        } else {
-          for (let i = 0; i < gridBubbles.length; i++) {
-            const b = gridBubbles[i];
-            const dist = Math.hypot(activeProjectile.x - b.x, activeProjectile.y - b.y);
-            if (dist <= ARENA_BOUNDS.radius * 1.95) {
-              settleProjectile();
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    renderer.render(scene, camera);
-  }
-
-  /* =========================================================
-   * BOOTSTRAP
-   * ========================================================= */
-  initThreeScene();
-  calibrateScreenScaling();
-  checkSavedSessionBanner();
-  syncArsenalUI();
-  updateRecordsAndHUD();
-  requestAnimationFrame(animate);
-})();
+}
